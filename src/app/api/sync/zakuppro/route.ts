@@ -1,0 +1,101 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+
+// Mock ZakupPro API data — simulates fetching projects from an external service
+function getMockZakupProProjects() {
+  const projects = [];
+  for (let i = 1; i <= 10; i++) {
+    const num = String(i).padStart(6, '0');
+    projects.push({
+      externalId: `ПМ${num}`,
+      name: `Проект ZakupPro #${i}`,
+      contractAmount: Math.round((500_000 + Math.random() * 4_500_000) * 100) / 100,
+      status: i <= 3 ? 'active' : i <= 7 ? 'lead' : 'completed',
+      startDate: new Date(2025, Math.floor(Math.random() * 6), 1).toISOString(),
+      endDate: i > 7 ? new Date(2025, 11, 31).toISOString() : null,
+    });
+  }
+  return projects;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // Optional API key validation
+    const apiKey = request.headers.get('X-API-Key');
+    if (apiKey && apiKey !== process.env.ZAKUPPRO_API_KEY && apiKey !== 'test-key') {
+      return NextResponse.json(
+        { error: 'Неверный API-ключ' },
+        { status: 401 }
+      );
+    }
+
+    // Simulate fetching from ZakupPro external API
+    const zakupProProjects = getMockZakupProProjects();
+
+    let synced = 0;
+    let created = 0;
+    let updated = 0;
+    const errors: Array<{ externalId: string; error: string }> = [];
+
+    for (const zpProject of zakupProProjects) {
+      try {
+        const existing = await db.project.findUnique({
+          where: { externalId: zpProject.externalId },
+        });
+
+        if (existing) {
+          // Update if name or amount changed
+          const needsUpdate =
+            existing.name !== zpProject.name ||
+            existing.contractAmount !== zpProject.contractAmount;
+
+          if (needsUpdate) {
+            await db.project.update({
+              where: { id: existing.id },
+              data: {
+                name: zpProject.name,
+                contractAmount: zpProject.contractAmount,
+              },
+            });
+            updated++;
+          }
+        } else {
+          // Create new project with status "lead"
+          await db.project.create({
+            data: {
+              externalId: zpProject.externalId,
+              name: zpProject.name,
+              contractAmount: zpProject.contractAmount,
+              status: 'lead',
+              startDate: zpProject.startDate ? new Date(zpProject.startDate) : null,
+              endDate: zpProject.endDate ? new Date(zpProject.endDate) : null,
+            },
+          });
+          created++;
+        }
+
+        synced++;
+      } catch (err) {
+        console.error(`Error syncing project ${zpProject.externalId}:`, err);
+        errors.push({
+          externalId: zpProject.externalId,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    }
+
+    return NextResponse.json({
+      synced,
+      created,
+      updated,
+      errors,
+      syncedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('POST /sync/zakuppro error:', error);
+    return NextResponse.json(
+      { error: 'Ошибка синхронизации с ZakupPro' },
+      { status: 500 }
+    );
+  }
+}

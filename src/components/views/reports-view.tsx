@@ -21,7 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { BarChart3, TrendingUp, TrendingDown, DollarSign } from 'lucide-react'
+import { BarChart3, TrendingUp, TrendingDown, DollarSign, FileSpreadsheet, FileDown } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -150,8 +150,8 @@ export function ReportsView() {
           {/* Controls */}
           <Card>
             <CardContent className="pt-4">
-              <div className="grid gap-3 sm:grid-cols-4 items-end">
-                <div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-full sm:w-48">
                   <label className="text-sm font-medium">Проект</label>
                   <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
                     <SelectTrigger className="mt-1">
@@ -166,11 +166,11 @@ export function ReportsView() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
+                <div className="w-full sm:w-40">
                   <label className="text-sm font-medium">С</label>
                   <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="mt-1" />
                 </div>
-                <div>
+                <div className="w-full sm:w-40">
                   <label className="text-sm font-medium">По</label>
                   <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="mt-1" />
                 </div>
@@ -178,6 +178,34 @@ export function ReportsView() {
                   <BarChart3 className="mr-2 h-4 w-4" />
                   Сформировать
                 </Button>
+                {projectPnl && selectedProjectId && (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const params = new URLSearchParams({ format: 'excel' })
+                        if (dateFrom) params.set('dateFrom', dateFrom)
+                        if (dateTo) params.set('dateTo', dateTo)
+                        window.open(`/api/reports/pnl/project/${selectedProjectId}/export?${params}`, '_blank')
+                      }}
+                    >
+                      <FileSpreadsheet className="mr-2 h-4 w-4" />
+                      Экспорт Excel
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const params = new URLSearchParams({ format: 'csv' })
+                        if (dateFrom) params.set('dateFrom', dateFrom)
+                        if (dateTo) params.set('dateTo', dateTo)
+                        window.open(`/api/reports/pnl/project/${selectedProjectId}/export?${params}`, '_blank')
+                      }}
+                    >
+                      <FileDown className="mr-2 h-4 w-4" />
+                      CSV
+                    </Button>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -293,12 +321,12 @@ export function ReportsView() {
           {/* Controls */}
           <Card>
             <CardContent className="pt-4">
-              <div className="grid gap-3 sm:grid-cols-3 items-end">
-                <div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-full sm:w-40">
                   <label className="text-sm font-medium">С</label>
                   <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="mt-1" />
                 </div>
-                <div>
+                <div className="w-full sm:w-40">
                   <label className="text-sm font-medium">По</label>
                   <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="mt-1" />
                 </div>
@@ -306,6 +334,20 @@ export function ReportsView() {
                   <BarChart3 className="mr-2 h-4 w-4" />
                   Сформировать
                 </Button>
+                {businessPnl && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const params = new URLSearchParams({ format: 'excel' })
+                      if (dateFrom) params.set('dateFrom', dateFrom)
+                      if (dateTo) params.set('dateTo', dateTo)
+                      window.open(`/api/reports/pnl/business/export?${params}`, '_blank')
+                    }}
+                  >
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    Экспорт Excel
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

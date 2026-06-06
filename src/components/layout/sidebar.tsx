@@ -1,6 +1,8 @@
 'use client'
 
+import { useSession, signOut } from 'next-auth/react'
 import { useAppStore, type View } from '@/lib/store'
+import { roleLabels } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
@@ -11,11 +13,18 @@ import {
   Tags,
   Users,
   X,
-  ChevronLeft,
+  LogOut,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const navItems: { view: View; label: string; icon: React.ElementType; group: string }[] = [
   { view: 'dashboard', label: 'Дашборд', icon: LayoutDashboard, group: 'Основное' },
@@ -27,10 +36,26 @@ const navItems: { view: View; label: string; icon: React.ElementType; group: str
   { view: 'counterparties', label: 'Контрагенты', icon: Users, group: 'Справочники' },
 ]
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase()
+  }
+  return name.slice(0, 2).toUpperCase()
+}
+
 export function Sidebar() {
+  const { data: session } = useSession()
   const { currentView, setView, sidebarOpen, setSidebarOpen } = useAppStore()
 
   const groups = ['Основное', 'Аналитика', 'Справочники']
+  const userName = session?.user?.name ?? 'Пользователь'
+  const userRole = session?.user?.role ?? 'manager'
+  const initials = getInitials(userName)
+
+  const handleSignOut = async () => {
+    await signOut({ callbackUrl: '/' })
+  }
 
   return (
     <>
@@ -108,17 +133,41 @@ export function Sidebar() {
           </nav>
         </ScrollArea>
 
-        {/* Footer */}
+        {/* Footer with user info and logout */}
         <div className="border-t border-slate-700 p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-xs font-medium">
-              ИА
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-medium">Иванов А.</p>
-              <p className="truncate text-[11px] text-slate-400">Собственник</p>
-            </div>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex w-full items-center gap-3 rounded-lg px-1 py-1.5 transition-colors hover:bg-slate-800">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600/30 text-xs font-medium text-emerald-400">
+                  {initials}
+                </div>
+                <div className="flex-1 min-w-0 text-left">
+                  <p className="truncate text-sm font-medium">{userName}</p>
+                  <p className="truncate text-[11px] text-slate-400">
+                    {roleLabels[userRole] ?? userRole}
+                  </p>
+                </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              side="top"
+              className="w-56"
+              align="start"
+            >
+              <div className="px-2 py-1.5">
+                <p className="text-sm font-medium">{userName}</p>
+                <p className="text-xs text-muted-foreground">{session?.user?.email}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={handleSignOut}
+                className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Выйти из системы
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </aside>
     </>

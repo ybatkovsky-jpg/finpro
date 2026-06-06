@@ -11,6 +11,7 @@ import { ReportsView } from '@/components/views/reports-view'
 import { ImportView } from '@/components/views/import-view'
 import { CategoriesView } from '@/components/views/categories-view'
 import { CounterpartiesView } from '@/components/views/counterparties-view'
+import { SyncView } from '@/components/views/sync-view'
 
 const viewTitles: Record<string, string> = {
   dashboard: 'Дашборд',
@@ -20,6 +21,7 @@ const viewTitles: Record<string, string> = {
   import: 'Импорт данных',
   categories: 'Категории',
   counterparties: 'Контрагенты',
+  sync: 'Синхронизация',
 }
 
 function ViewRenderer() {
@@ -40,6 +42,8 @@ function ViewRenderer() {
       return <CategoriesView />
     case 'counterparties':
       return <CounterpartiesView />
+    case 'sync':
+      return <SyncView />
     default:
       return <DashboardView />
   }

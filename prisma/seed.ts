@@ -1,4 +1,5 @@
 import { db } from '../src/lib/db'
+import bcrypt from 'bcryptjs'
 
 async function main() {
   console.log('🌱 Seeding database...\n')
@@ -15,6 +16,10 @@ async function main() {
   ])
   console.log('✅ Cleaned up existing data\n')
 
+  // ─── Hash default password ─────────────────────────────────────────
+  const hashedPassword = await bcrypt.hash('password123', 10)
+  console.log('✅ Password hashed\n')
+
   // ─── Seed ───────────────────────────────────────────────────────────
   const result = await db.$transaction(async (tx) => {
     // --- Users ---
@@ -23,7 +28,7 @@ async function main() {
         data: {
           email: 'ivanov@promebel.ru',
           name: 'Иванов Алексей',
-          password: 'password123',
+          password: hashedPassword,
           role: 'owner',
           isActive: true,
         },
@@ -32,7 +37,7 @@ async function main() {
         data: {
           email: 'petrova@promebel.ru',
           name: 'Петрова Мария',
-          password: 'password123',
+          password: hashedPassword,
           role: 'accountant',
           isActive: true,
         },
@@ -41,7 +46,7 @@ async function main() {
         data: {
           email: 'sidorov@promebel.ru',
           name: 'Сидоров Дмитрий',
-          password: 'password123',
+          password: hashedPassword,
           role: 'manager',
           isActive: true,
         },
@@ -50,7 +55,7 @@ async function main() {
         data: {
           email: 'kozlova@promebel.ru',
           name: 'Козлова Анна',
-          password: 'password123',
+          password: hashedPassword,
           role: 'storekeeper',
           isActive: true,
         },
