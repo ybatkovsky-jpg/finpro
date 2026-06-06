@@ -82,8 +82,8 @@ export async function POST(request: NextRequest) {
       requiresClassification = false,
     } = body;
 
-    // Validation
-    if (!amount || amount <= 0) {
+    // Validation: amount must be a positive number (0 or negative → 422 Unprocessable Entity)
+    if (typeof amount !== 'number' || isNaN(amount) || amount <= 0) {
       return NextResponse.json(
         { error: 'Amount must be greater than 0' },
         { status: 422 }

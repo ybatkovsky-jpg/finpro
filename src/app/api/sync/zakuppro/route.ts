@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { validateApiKey, apiKeyOrSession } from '@/lib/api-key-auth';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 // Mock ZakupPro API data — simulates fetching projects from an external service
 function getMockZakupProProjects() {
@@ -20,11 +23,15 @@ function getMockZakupProProjects() {
 
 export async function POST(request: NextRequest) {
   try {
-    // Optional API key validation
-    const apiKey = request.headers.get('X-API-Key');
-    if (apiKey && apiKey !== process.env.ZAKUPPRO_API_KEY && apiKey !== 'test-key') {
+    // Authentication: accept EITHER X-API-Key header OR authenticated session
+    const isApiKey = validateApiKey(request);
+    const session = await getServerSession(authOptions);
+    const isSession = !!session;
+
+    const authResult = { authenticated: isApiKey || isSession, isApiKey };
+    if (!apiKeyOrSession(authResult)) {
       return NextResponse.json(
-        { error: 'Неверный API-ключ' },
+        { error: 'Требуется авторизация. Используйте X-API-Key или авторизованную сессию.' },
         { status: 401 }
       );
     }

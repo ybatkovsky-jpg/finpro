@@ -9,6 +9,30 @@ interface ParsedDocument {
   description: string;
 }
 
+/**
+ * Detect if file content is UTF-8 encoded rather than Windows-1251.
+ * 1C ClientBank format standard requires Windows-1251 encoding.
+ * Spec: "File in UTF-8 → 400 Bad Request: Invalid encoding. Expected Windows-1251"
+ */
+function isUtf8Encoded(content: string, rawBytes: Uint8Array): boolean {
+  // Check 1: UTF-8 BOM (EF BB BF)
+  if (rawBytes.length >= 3 && rawBytes[0] === 0xEF && rawBytes[1] === 0xBB && rawBytes[2] === 0xBF) {
+    return true;
+  }
+
+  // Check 2: If the text read as UTF-8 contains valid Cyrillic 1C markers,
+  // the file was saved as UTF-8, not Windows-1251.
+  // Windows-1251 Cyrillic bytes (0xC0-0xFF) read as UTF-8 would produce
+  // replacement characters (U+FFFD) or garbled text, not valid Russian words.
+  const has1CMarkers = content.includes('СекцияДокумент') || content.includes('КонецФайла');
+  if (has1CMarkers) {
+    // The Cyrillic markers are readable as UTF-8 → file was UTF-8 encoded
+    return true;
+  }
+
+  return false;
+}
+
 function parse1CClientBank(content: string): ParsedDocument[] {
   const documents: ParsedDocument[] = [];
   const sections = content.split('СекцияДокумент');
@@ -66,7 +90,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const content = await file.text();
+    // Read raw bytes for encoding detection
+    const arrayBuffer = await file.arrayBuffer();
+    const rawBytes = new Uint8Array(arrayBuffer);
+
+    // Read as text (UTF-8 by default)
+    const content = new TextDecoder().decode(rawBytes);
+
+    // Encoding check: reject UTF-8 files, require Windows-1251
+    if (isUtf8Encoded(content, rawBytes)) {
+      return NextResponse.json(
+        { error: 'Invalid encoding. Expected Windows-1251' },
+        { status: 400 }
+      );
+    }
+
     const documents = parse1CClientBank(content);
 
     let imported = 0;
@@ -104,7 +142,8 @@ export async function POST(request: NextRequest) {
         const type = doc.amount > 0 ? 'expense' : 'income';
         const absAmount = Math.abs(doc.amount);
 
-        // Deduplication: check if transaction with same externalId + source + date exists
+        // Deduplication: check if transaction with same Номер+Дата (externalId+source+date) exists
+        // Spec: "Re-import same Номер+Дата → duplicates_skipped += 1, no duplicates in DB"
         const existing = await db.transaction.findUnique({
           where: {
             externalId_source_date: {

@@ -46,8 +46,9 @@ export async function GET(request: NextRequest) {
     const ebit = grossProfit - operationalExpenses;
 
     // USN Tax (Simplified tax system, 15% on profit when positive)
+    // Spec: "tax_base < 0 → usn_tax = 0.0"
     const taxBase = ebit;
-    const usnTax = taxBase > 0 ? Math.round(taxBase * 0.15 * 100) / 100 : 0;
+    const usnTax = taxBase > 0 ? Math.round(taxBase * 0.15 * 100) / 100 : 0.0;
 
     // Net Profit
     const netProfit = ebit - usnTax;

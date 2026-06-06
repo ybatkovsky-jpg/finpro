@@ -31,11 +31,39 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-function parseCSV(content: string): CsvRow[] {
-  const lines = content.split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) return [];
+/**
+ * Parse control sum from CSV header comments.
+ * Supported formats:
+ *   # ControlSum:12345.67
+ *   # Total:12345.67
+ *   # КонтрольнаяСумма:12345.67
+ *   # Итого:12345.67
+ */
+function parseControlSum(lines: string[]): number | null {
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('#')) continue;
+    const match = trimmed.match(/^#\s*(?:ControlSum|Total|КонтрольнаяСумма|Итого)\s*:\s*([\d.,]+)/i);
+    if (match) {
+      const numStr = match[1].replace(',', '.');
+      const value = parseFloat(numStr);
+      if (!isNaN(value)) return value;
+    }
+  }
+  return null;
+}
 
-  const headers = parseCSVLine(lines[0]).map((h) =>
+function parseCSV(content: string): { rows: CsvRow[]; controlSum: number | null } {
+  const lines = content.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) return { rows: [], controlSum: null };
+
+  // Extract control sum from header comment lines
+  const controlSum = parseControlSum(lines);
+
+  const dataLines = lines.filter((line) => !line.trim().startsWith('#'));
+  if (dataLines.length < 2) return { rows: [], controlSum: null };
+
+  const headers = parseCSVLine(dataLines[0]).map((h) =>
     h.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
   );
 
@@ -62,8 +90,8 @@ function parseCSV(content: string): CsvRow[] {
   }
 
   const rows: CsvRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i]);
+  for (let i = 1; i < dataLines.length; i++) {
+    const values = parseCSVLine(dataLines[i]);
     if (values.length < headers.length) continue;
 
     rows.push({
@@ -77,7 +105,7 @@ function parseCSV(content: string): CsvRow[] {
     });
   }
 
-  return rows;
+  return { rows, controlSum };
 }
 
 export async function POST(request: NextRequest) {
@@ -93,12 +121,35 @@ export async function POST(request: NextRequest) {
     }
 
     const content = await file.text();
-    const rows = parseCSV(content);
+    const { rows, controlSum } = parseCSV(content);
 
     let imported = 0;
     const errors: string[] = [];
-    let expectedSum = 0;
-    let actualSum = 0;
+    const createdTransactionIds: string[] = [];
+
+    // Calculate sum of all valid row amounts for control sum check
+    let rowSum = 0;
+    for (const row of rows) {
+      const amount = parseFloat(row.amount);
+      if (!isNaN(amount) && amount > 0 && ['income', 'expense'].includes(row.type)) {
+        rowSum += amount;
+      }
+    }
+
+    // Spec: "CSV sum ≠ sum of rows → ROLLBACK, error in log"
+    if (controlSum !== null && Math.abs(controlSum - rowSum) >= 0.01) {
+      console.error(
+        `CSV control sum mismatch: declared=${controlSum}, actual=${rowSum}. ROLLBACK.`
+      );
+      return NextResponse.json(
+        {
+          error: `Control sum mismatch: declared ${controlSum}, actual sum of rows ${Math.round(rowSum * 100) / 100}. Import rolled back.`,
+          declaredSum: controlSum,
+          actualSum: Math.round(rowSum * 100) / 100,
+        },
+        { status: 400 }
+      );
+    }
 
     // Get default user for createdBy
     const defaultUser = await db.user.findFirst();
@@ -133,8 +184,6 @@ export async function POST(request: NextRequest) {
           errors.push(`Row ${i + 1}: Invalid date "${row.date}"`);
           continue;
         }
-
-        expectedSum += amount;
 
         // Find or create project
         let projectId: string | null = null;
@@ -204,7 +253,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        await db.transaction.create({
+        const transaction = await db.transaction.create({
           data: {
             projectId,
             categoryId,
@@ -218,7 +267,7 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        actualSum += amount;
+        createdTransactionIds.push(transaction.id);
         imported++;
       } catch (rowError) {
         errors.push(
@@ -227,13 +276,43 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const controlSumMatch = Math.abs(expectedSum - actualSum) < 0.01;
+    // Post-import control sum validation: if control sum was declared,
+    // verify actual imported total matches the declared total.
+    // If mismatch, rollback all created transactions.
+    if (controlSum !== null) {
+      const importedSum = createdTransactionIds.length > 0
+        ? (await db.transaction.findMany({
+            where: { id: { in: createdTransactionIds } },
+            select: { amount: true },
+          })).reduce((sum, t) => sum + t.amount, 0)
+        : 0;
+
+      if (Math.abs(controlSum - importedSum) >= 0.01) {
+        // ROLLBACK: delete all created transactions
+        console.error(
+          `CSV post-import control sum mismatch: declared=${controlSum}, imported=${importedSum}. Rolling back ${createdTransactionIds.length} transactions.`
+        );
+        await db.transaction.deleteMany({
+          where: { id: { in: createdTransactionIds } },
+        });
+        return NextResponse.json(
+          {
+            error: `Post-import control sum mismatch: declared ${controlSum}, imported ${Math.round(importedSum * 100) / 100}. All imported rows rolled back.`,
+            declaredSum: controlSum,
+            importedSum: Math.round(importedSum * 100) / 100,
+            rolledBack: createdTransactionIds.length,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     return NextResponse.json({
       totalProcessed: rows.length,
       imported,
       errors,
-      controlSumMatch,
+      controlSumMatch: controlSum !== null ? true : null,
+      declaredControlSum: controlSum,
     });
   } catch (error) {
     console.error('POST /imports/csv error:', error);
