@@ -17,9 +17,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  projects      Project[]       @relation("ProjectManager")
-  transactions  Transaction[]   @relation("TransactionCreator")
-  auditLogs     AuditLog[]
+  projects       Project[]       @relation("ProjectManager")
+  transactions   Transaction[]   @relation("TransactionCreator")
+  auditLogs      AuditLog[]
+  refreshTokens  RefreshToken[]
 }
 
 model Client {
@@ -93,25 +94,35 @@ model Transaction {
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
-  project     Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  category    Category     @relation(fields: [categoryId], references: [id])
+  project      Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  category     Category      @relation(fields: [categoryId], references: [id])
   counterparty Counterparty? @relation(fields: [counterpartyId], references: [id])
-  creator     User         @relation("TransactionCreator", fields: [createdBy], references: [id])
-  auditLogs   AuditLog[]
+  creator      User          @relation("TransactionCreator", fields: [createdBy], references: [id])
+  auditLogs    AuditLog[]
 
   @@unique([externalId, source, date])
 }
 
 model AuditLog {
-  id           String   @id @default(uuid())
-  entityType   String   // transaction | project | category
-  entityId     String
-  action       String   // create | update | delete | import
-  changes      String?  // JSON string
+  id            String   @id @default(uuid())
+  entityType    String   // transaction | project | category
+  entityId      String
+  action        String   // create | update | delete | import
+  changes       String?  // JSON string
   transactionId String?
   userId        String
   createdAt     DateTime @default(now())
 
   user        User        @relation(fields: [userId], references: [id])
   transaction Transaction? @relation(fields: [transactionId], references: [id])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

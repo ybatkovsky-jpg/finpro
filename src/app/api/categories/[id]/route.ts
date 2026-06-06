@@ -4,9 +4,6 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 
-const VALID_STATUSES = ['lead', 'active', 'completed', 'cancelled'];
-const EXTERNAL_ID_PATTERN = /^ПМ\d{6}$/;
-
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -14,33 +11,27 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const project = await db.project.findUnique({
+    const category = await db.category.findUnique({
       where: { id },
       include: {
-        client: true,
-        manager: { select: { id: true, name: true, email: true } },
-        transactions: {
-          include: {
-            category: { select: { id: true, name: true, type: true } },
-            counterparty: { select: { id: true, name: true } },
-          },
-          orderBy: { date: 'desc' },
-        },
+        parent: { select: { id: true, name: true } },
+        children: { select: { id: true, name: true, type: true } },
+        _count: { select: { transactions: true } },
       },
     });
 
-    if (!project) {
+    if (!category) {
       return NextResponse.json(
-        { error: 'Project not found' },
+        { error: 'Category not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json(project);
+    return NextResponse.json(category);
   } catch (error) {
-    console.error('GET /projects/[id] error:', error);
+    console.error('GET /categories/[id] error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch project' },
+      { error: 'Failed to fetch category' },
       { status: 500 }
     );
   }
@@ -51,7 +42,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // RBAC: require owner or manager
+    // RBAC: require owner or accountant
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
@@ -61,7 +52,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
     }
     try {
-      requireRole(user, 'owner', 'manager');
+      requireRole(user, 'owner', 'accountant');
     } catch {
       return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
     }
@@ -69,67 +60,62 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.project.findUnique({ where: { id } });
+    const existing = await db.category.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(
-        { error: 'Project not found' },
+        { error: 'Category not found' },
         { status: 404 }
       );
     }
 
-    // Validate externalId if provided
-    if (body.externalId !== undefined && !EXTERNAL_ID_PATTERN.test(body.externalId)) {
-      return NextResponse.json(
-        { error: 'externalId must match pattern ПМ###### (e.g., ПМ000001)' },
-        { status: 422 }
-      );
-    }
-
-    // Validate status if provided
-    if (body.status !== undefined && !VALID_STATUSES.includes(body.status)) {
-      return NextResponse.json(
-        { error: `status must be one of: ${VALID_STATUSES.join(', ')}` },
-        { status: 422 }
-      );
-    }
-
     const updateData: Record<string, unknown> = {};
-    const allowedFields = [
-      'externalId',
-      'name',
-      'clientId',
-      'status',
-      'contractAmount',
-      'managerId',
-    ];
+    const allowedFields = ['name', 'type', 'parentId'];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        updateData[field] = body[field];
+        updateData[field] = body[field] || null;
       }
     }
 
-    // Handle date fields separately
-    if (body.startDate !== undefined) {
-      updateData.startDate = body.startDate ? new Date(body.startDate) : null;
-    }
-    if (body.endDate !== undefined) {
-      updateData.endDate = body.endDate ? new Date(body.endDate) : null;
+    // Validate type if being changed
+    if (body.type !== undefined && !['income', 'expense'].includes(body.type)) {
+      return NextResponse.json(
+        { error: 'type must be "income" or "expense"' },
+        { status: 422 }
+      );
     }
 
-    const project = await db.project.update({
+    // If parentId is being set, validate parent exists and type matches
+    const effectiveType = (body.type as string) || existing.type;
+    if (body.parentId !== undefined && body.parentId) {
+      const parent = await db.category.findUnique({ where: { id: body.parentId } });
+      if (!parent) {
+        return NextResponse.json(
+          { error: 'Parent category not found' },
+          { status: 422 }
+        );
+      }
+      if (parent.type !== effectiveType) {
+        return NextResponse.json(
+          { error: 'Parent category type must match' },
+          { status: 422 }
+        );
+      }
+    }
+
+    const category = await db.category.update({
       where: { id },
       data: updateData,
       include: {
-        client: { select: { id: true, name: true } },
-        manager: { select: { id: true, name: true, email: true } },
+        parent: { select: { id: true, name: true } },
+        children: { select: { id: true, name: true, type: true } },
       },
     });
 
     // Audit log
     await db.auditLog.create({
       data: {
-        entityType: 'project',
+        entityType: 'category',
         entityId: id,
         action: 'update',
         changes: JSON.stringify(updateData),
@@ -137,11 +123,17 @@ export async function PUT(
       },
     });
 
-    return NextResponse.json(project);
+    return NextResponse.json(category);
   } catch (error) {
-    console.error('PUT /projects/[id] error:', error);
+    console.error('PUT /categories/[id] error:', error);
+    if (String(error).includes('Unique constraint')) {
+      return NextResponse.json(
+        { error: 'Category with this name already exists' },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
-      { error: 'Failed to update project' },
+      { error: 'Failed to update category' },
       { status: 500 }
     );
   }
@@ -169,36 +161,49 @@ export async function DELETE(
 
     const { id } = await params;
 
-    const existing = await db.project.findUnique({ where: { id } });
+    const existing = await db.category.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { transactions: true } },
+      },
+    });
+
     if (!existing) {
       return NextResponse.json(
-        { error: 'Project not found' },
+        { error: 'Category not found' },
         { status: 404 }
       );
     }
 
-    await db.project.delete({ where: { id } });
+    // Check if category has transactions
+    if (existing._count.transactions > 0) {
+      return NextResponse.json(
+        { error: 'Нельзя удалить категорию с привязанными транзакциями' },
+        { status: 409 }
+      );
+    }
+
+    await db.category.delete({ where: { id } });
 
     // Audit log
     await db.auditLog.create({
       data: {
-        entityType: 'project',
+        entityType: 'category',
         entityId: id,
         action: 'delete',
         changes: JSON.stringify({
           name: existing.name,
-          externalId: existing.externalId,
-          status: existing.status,
+          type: existing.type,
         }),
         userId: user.id,
       },
     });
 
-    return NextResponse.json({ message: 'Project deleted successfully' });
+    return NextResponse.json({ message: 'Category deleted successfully' });
   } catch (error) {
-    console.error('DELETE /projects/[id] error:', error);
+    console.error('DELETE /categories/[id] error:', error);
     return NextResponse.json(
-      { error: 'Failed to delete project' },
+      { error: 'Failed to delete category' },
       { status: 500 }
     );
   }

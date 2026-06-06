@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 
 export async function GET(
   _request: NextRequest,
@@ -40,9 +43,23 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // RBAC: require owner, accountant, or manager (own only)
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
+    }
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
+    }
+    try {
+      requireRole(user, 'owner', 'accountant', 'manager');
+    } catch {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
-    const userId = body.userId || body.createdBy;
 
     const existing = await db.transaction.findUnique({ where: { id } });
     if (!existing) {
@@ -50,6 +67,11 @@ export async function PUT(
         { error: 'Transaction not found' },
         { status: 404 }
       );
+    }
+
+    // Manager can only edit their own transactions
+    if (user.role === 'manager' && existing.createdBy !== user.id) {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
     }
 
     // Validation
@@ -88,6 +110,18 @@ export async function PUT(
       }
     }
 
+    // Compare before/after for audit log
+    const changes: Record<string, { before: unknown; after: unknown }> = {};
+    for (const field of allowedFields) {
+      if (body[field] !== undefined) {
+        const beforeValue = field === 'date' ? existing[field as keyof typeof existing]?.toISOString() : existing[field as keyof typeof existing];
+        const afterValue = updateData[field];
+        if (JSON.stringify(beforeValue) !== JSON.stringify(afterValue)) {
+          changes[field] = { before: beforeValue, after: afterValue };
+        }
+      }
+    }
+
     const transaction = await db.transaction.update({
       where: { id },
       data: updateData,
@@ -98,19 +132,17 @@ export async function PUT(
       },
     });
 
-    // Create audit log
-    if (userId) {
-      await db.auditLog.create({
-        data: {
-          entityType: 'transaction',
-          entityId: id,
-          action: 'update',
-          changes: JSON.stringify(updateData),
-          userId,
-          transactionId: id,
-        },
-      });
-    }
+    // Always create audit log with authenticated user
+    await db.auditLog.create({
+      data: {
+        entityType: 'transaction',
+        entityId: id,
+        action: 'update',
+        changes: JSON.stringify(Object.keys(changes).length > 0 ? changes : updateData),
+        userId: user.id,
+        transactionId: id,
+      },
+    });
 
     return NextResponse.json(transaction);
   } catch (error) {
@@ -123,13 +155,26 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // RBAC: require owner or accountant
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
+    }
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
+    }
+    try {
+      requireRole(user, 'owner', 'accountant');
+    } catch {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+    }
+
     const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
 
     const existing = await db.transaction.findUnique({ where: { id } });
     if (!existing) {
@@ -141,22 +186,23 @@ export async function DELETE(
 
     await db.transaction.delete({ where: { id } });
 
-    // Create audit log
-    if (userId) {
-      await db.auditLog.create({
-        data: {
-          entityType: 'transaction',
-          entityId: id,
-          action: 'delete',
-          changes: JSON.stringify({
-            deletedAmount: existing.amount,
-            deletedType: existing.type,
-            deletedDate: existing.date,
-          }),
-          userId,
-        },
-      });
-    }
+    // Always create audit log with authenticated user
+    await db.auditLog.create({
+      data: {
+        entityType: 'transaction',
+        entityId: id,
+        action: 'delete',
+        changes: JSON.stringify({
+          deletedAmount: existing.amount,
+          deletedType: existing.type,
+          deletedDate: existing.date,
+          deletedDescription: existing.description,
+          deletedCategoryId: existing.categoryId,
+          deletedProjectId: existing.projectId,
+        }),
+        userId: user.id,
+      },
+    });
 
     return NextResponse.json({ message: 'Transaction deleted successfully' });
   } catch (error) {

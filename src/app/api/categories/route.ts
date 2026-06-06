@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,6 +34,21 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // RBAC: require owner or accountant
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
+    }
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
+    }
+    try {
+      requireRole(user, 'owner', 'accountant');
+    } catch {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { name, type, parentId } = body;
 
@@ -74,6 +92,17 @@ export async function POST(request: NextRequest) {
       include: {
         parent: { select: { id: true, name: true } },
         children: { select: { id: true, name: true, type: true } },
+      },
+    });
+
+    // Audit log
+    await db.auditLog.create({
+      data: {
+        entityType: 'category',
+        entityId: category.id,
+        action: 'create',
+        changes: JSON.stringify({ name: category.name, type: category.type, parentId: category.parentId }),
+        userId: user.id,
       },
     });
 

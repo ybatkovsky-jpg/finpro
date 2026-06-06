@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 
 export async function GET(request: NextRequest) {
   try {
@@ -66,12 +69,26 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // RBAC: require owner, accountant, or manager
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
+    }
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
+    }
+    try {
+      requireRole(user, 'owner', 'accountant', 'manager');
+    } catch {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+    }
+
     const body = await request.json();
     const {
       projectId,
       categoryId,
       counterpartyId,
-      createdBy,
       date,
       amount,
       type,
@@ -104,13 +121,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!createdBy) {
-      return NextResponse.json(
-        { error: 'createdBy is required' },
-        { status: 422 }
-      );
-    }
-
     if (!date) {
       return NextResponse.json(
         { error: 'date is required' },
@@ -128,7 +138,7 @@ export async function POST(request: NextRequest) {
         projectId: projectId || null,
         categoryId,
         counterpartyId: counterpartyId || null,
-        createdBy,
+        createdBy: user.id,
         date: transactionDate,
         amount,
         type,
@@ -152,7 +162,7 @@ export async function POST(request: NextRequest) {
         entityId: transaction.id,
         action: 'create',
         changes: JSON.stringify({ amount, type, date, categoryId, projectId }),
-        userId: createdBy,
+        userId: user.id,
         transactionId: transaction.id,
       },
     });

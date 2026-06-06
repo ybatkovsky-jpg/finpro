@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { validateApiKey, apiKeyOrSession } from '@/lib/api-key-auth';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
+import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 
 // Mock ZakupPro API data — simulates fetching projects from an external service
 function getMockZakupProProjects() {
@@ -23,15 +24,29 @@ function getMockZakupProProjects() {
 
 export async function POST(request: NextRequest) {
   try {
-    // Authentication: accept EITHER X-API-Key header OR authenticated session
+    // Authentication: accept EITHER X-API-Key header OR authenticated session (owner only)
     const isApiKey = validateApiKey(request);
     const session = await getServerSession(authOptions);
-    const isSession = !!session;
+    let isSession = false;
+    let sessionUser = null;
+
+    if (session?.user) {
+      const user = await getCurrentUser();
+      if (user) {
+        try {
+          requireRole(user, 'owner');
+          isSession = true;
+          sessionUser = user;
+        } catch {
+          // User is authenticated but not owner — not authorized for this endpoint
+        }
+      }
+    }
 
     const authResult = { authenticated: isApiKey || isSession, isApiKey };
     if (!apiKeyOrSession(authResult)) {
       return NextResponse.json(
-        { error: 'Требуется авторизация. Используйте X-API-Key или авторизованную сессию.' },
+        { error: 'Требуется авторизация. Используйте X-API-Key или авторизованную сессию с ролью owner.' },
         { status: 401 }
       );
     }
@@ -89,6 +104,19 @@ export async function POST(request: NextRequest) {
           error: err instanceof Error ? err.message : 'Unknown error',
         });
       }
+    }
+
+    // Audit log if session-based auth
+    if (sessionUser) {
+      await db.auditLog.create({
+        data: {
+          entityType: 'project',
+          entityId: 'batch',
+          action: 'import',
+          changes: JSON.stringify({ source: 'zakuppro', synced, created, updated }),
+          userId: sessionUser.id,
+        },
+      });
     }
 
     return NextResponse.json({

@@ -21,7 +21,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { BarChart3, TrendingUp, TrendingDown, DollarSign, FileSpreadsheet, FileDown } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { BarChart3, TrendingUp, TrendingDown, DollarSign, FileSpreadsheet, FileDown, Search, Loader2 } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -41,6 +47,10 @@ const rubleFormatter = new Intl.NumberFormat('ru-RU', {
 
 function formatRuble(amount: number) {
   return rubleFormatter.format(amount)
+}
+
+function formatDate(dateStr: string) {
+  return new Intl.DateTimeFormat('ru-RU').format(new Date(dateStr))
 }
 
 interface Project {
@@ -70,11 +80,24 @@ interface BusinessPnl {
   usnTax: number
   netProfit: number
   projectBreakdown: Array<{
+    projectId?: string
     projectName: string
     revenue: number
     cogs: number
     grossProfit: number
   }>
+}
+
+// Drill-down transaction type
+interface DrillDownTransaction {
+  id: string
+  date: string
+  amount: number
+  type: string
+  description: string | null
+  project?: { id: string; name: string; externalId: string } | null
+  category?: { id: string; name: string; type: string } | null
+  counterparty?: { id: string; name: string } | null
 }
 
 export function ReportsView() {
@@ -90,6 +113,12 @@ export function ReportsView() {
   // Business P&L
   const [businessPnl, setBusinessPnl] = useState<BusinessPnl | null>(null)
   const [businessPnlLoading, setBusinessPnlLoading] = useState(false)
+
+  // Drill-down state
+  const [drillDownOpen, setDrillDownOpen] = useState(false)
+  const [drillDownTitle, setDrillDownTitle] = useState('')
+  const [drillDownTransactions, setDrillDownTransactions] = useState<DrillDownTransaction[]>([])
+  const [drillDownLoading, setDrillDownLoading] = useState(false)
 
   useEffect(() => {
     fetch('/api/projects?limit=100')
@@ -132,10 +161,71 @@ export function ReportsView() {
     }
   }
 
+  // Drill-down: fetch transactions for a project
+  const handleProjectDrillDown = async (projectName: string, projectId?: string) => {
+    setDrillDownTitle(`Детализация: ${projectName}`)
+    setDrillDownOpen(true)
+    setDrillDownLoading(true)
+    setDrillDownTransactions([])
+
+    try {
+      const params = new URLSearchParams()
+      if (projectId) params.set('projectId', projectId)
+      if (dateFrom) params.set('dateFrom', dateFrom)
+      if (dateTo) params.set('dateTo', dateTo)
+      params.set('limit', '200')
+      const res = await fetch(`/api/transactions?${params}`)
+      const json = await res.json()
+      setDrillDownTransactions(json.data || [])
+    } catch {
+      console.error('Failed to fetch drill-down transactions')
+    } finally {
+      setDrillDownLoading(false)
+    }
+  }
+
+  // Drill-down: fetch transactions by type for P&L line items
+  const handleLineItemDrillDown = async (title: string, type: 'income' | 'expense', projectFilter: 'with_project' | 'without_project' | 'all') => {
+    setDrillDownTitle(title)
+    setDrillDownOpen(true)
+    setDrillDownLoading(true)
+    setDrillDownTransactions([])
+
+    try {
+      const params = new URLSearchParams()
+      params.set('type', type)
+      if (dateFrom) params.set('dateFrom', dateFrom)
+      if (dateTo) params.set('dateTo', dateTo)
+      params.set('limit', '200')
+      const res = await fetch(`/api/transactions?${params}`)
+      const json = await res.json()
+      let transactions: DrillDownTransaction[] = json.data || []
+
+      // Apply project filter
+      if (projectFilter === 'with_project') {
+        transactions = transactions.filter((t) => t.project !== null && t.project !== undefined)
+      } else if (projectFilter === 'without_project') {
+        transactions = transactions.filter((t) => t.project === null || t.project === undefined)
+      }
+
+      setDrillDownTransactions(transactions)
+    } catch {
+      console.error('Failed to fetch drill-down transactions')
+    } finally {
+      setDrillDownLoading(false)
+    }
+  }
+
   // Auto-load business P&L on mount
   useEffect(() => {
     fetchBusinessPnl()
   }, [])
+
+  // Build a projectId lookup from projects list for the business P&L project breakdown
+  const projectByNameMap = new Map<string, string>()
+  for (const p of projects) {
+    projectByNameMap.set(p.name, p.id)
+  }
 
   return (
     <div className="space-y-6">
@@ -405,42 +495,80 @@ export function ReportsView() {
                       <TableRow>
                         <TableHead>Статья</TableHead>
                         <TableHead className="text-right">Сумма</TableHead>
+                        <TableHead className="text-right w-24"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       <TableRow className="font-semibold">
                         <TableCell>Выручка</TableCell>
                         <TableCell className="text-right text-emerald-600">{formatRuble(businessPnl.revenue)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleLineItemDrillDown('Выручка — доходные транзакции', 'income', 'all')}
+                          >
+                            <Search className="mr-1 h-3 w-3" />
+                            Детализация
+                          </Button>
+                        </TableCell>
                       </TableRow>
                       <TableRow>
                         <TableCell className="pl-6">Себестоимость (COGS)</TableCell>
                         <TableCell className="text-right text-red-600">-{formatRuble(businessPnl.cogs)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleLineItemDrillDown('Себестоимость (COGS) — расходные транзакции по проектам', 'expense', 'with_project')}
+                          >
+                            <Search className="mr-1 h-3 w-3" />
+                            Детализация
+                          </Button>
+                        </TableCell>
                       </TableRow>
                       <TableRow className="font-semibold bg-muted/50">
                         <TableCell>Валовая прибыль</TableCell>
                         <TableCell className={`text-right ${businessPnl.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                           {formatRuble(businessPnl.grossProfit)}
                         </TableCell>
+                        <TableCell></TableCell>
                       </TableRow>
                       <TableRow>
                         <TableCell className="pl-6">Операционные расходы</TableCell>
                         <TableCell className="text-right text-red-600">-{formatRuble(businessPnl.operationalExpenses)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleLineItemDrillDown('Операционные расходы — расходы без проекта', 'expense', 'without_project')}
+                          >
+                            <Search className="mr-1 h-3 w-3" />
+                            Детализация
+                          </Button>
+                        </TableCell>
                       </TableRow>
                       <TableRow className="font-semibold bg-muted/50">
                         <TableCell>EBIT</TableCell>
                         <TableCell className={`text-right ${businessPnl.ebit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                           {formatRuble(businessPnl.ebit)}
                         </TableCell>
+                        <TableCell></TableCell>
                       </TableRow>
                       <TableRow>
                         <TableCell className="pl-6">УСН налог (15%)</TableCell>
                         <TableCell className="text-right text-red-600">-{formatRuble(businessPnl.usnTax)}</TableCell>
+                        <TableCell></TableCell>
                       </TableRow>
                       <TableRow className="font-bold bg-emerald-50">
                         <TableCell>Чистая прибыль</TableCell>
                         <TableCell className={`text-right text-lg ${businessPnl.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                           {formatRuble(businessPnl.netProfit)}
                         </TableCell>
+                        <TableCell></TableCell>
                       </TableRow>
                     </TableBody>
                   </Table>
@@ -490,7 +618,7 @@ export function ReportsView() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">Разбивка по проектам</CardTitle>
-                    <CardDescription>Финансовые показатели по каждому проекту</CardDescription>
+                    <CardDescription>Нажмите на строку проекта для детализации</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="max-h-72 overflow-y-auto">
@@ -507,9 +635,19 @@ export function ReportsView() {
                         <TableBody>
                           {businessPnl.projectBreakdown.map((p) => {
                             const margin = p.revenue > 0 ? (p.grossProfit / p.revenue) * 100 : 0
+                            const projectId = p.projectId || projectByNameMap.get(p.projectName)
                             return (
-                              <TableRow key={p.projectName}>
-                                <TableCell className="font-medium">{p.projectName}</TableCell>
+                              <TableRow
+                                key={p.projectName}
+                                className="cursor-pointer hover:bg-muted/80 transition-colors"
+                                onClick={() => handleProjectDrillDown(p.projectName, projectId)}
+                              >
+                                <TableCell className="font-medium">
+                                  <span className="flex items-center gap-1">
+                                    {p.projectName}
+                                    <Search className="h-3 w-3 text-muted-foreground" />
+                                  </span>
+                                </TableCell>
                                 <TableCell className="text-right">{formatRuble(p.revenue)}</TableCell>
                                 <TableCell className="text-right">{formatRuble(p.cogs)}</TableCell>
                                 <TableCell className="text-right">
@@ -535,6 +673,64 @@ export function ReportsView() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Drill-Down Dialog */}
+      <Dialog open={drillDownOpen} onOpenChange={setDrillDownOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle>{drillDownTitle}</DialogTitle>
+          </DialogHeader>
+          {drillDownLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : drillDownTransactions.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              Нет транзакций за выбранный период
+            </div>
+          ) : (
+            <div className="max-h-[65vh] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Дата</TableHead>
+                    <TableHead>Описание</TableHead>
+                    <TableHead>Категория</TableHead>
+                    <TableHead>Контрагент</TableHead>
+                    <TableHead>Проект</TableHead>
+                    <TableHead className="text-right">Сумма</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {drillDownTransactions.map((t) => (
+                    <TableRow key={t.id}>
+                      <TableCell className="whitespace-nowrap">{formatDate(t.date)}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{t.description || '—'}</TableCell>
+                      <TableCell>{t.category?.name || '—'}</TableCell>
+                      <TableCell className="max-w-[150px] truncate">{t.counterparty?.name || '—'}</TableCell>
+                      <TableCell className="max-w-[150px] truncate">{t.project?.name || '—'}</TableCell>
+                      <TableCell className={`text-right whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {t.type === 'income' ? '+' : '-'}{formatRuble(t.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="mt-3 pt-3 border-t text-sm text-muted-foreground">
+                Всего транзакций: {drillDownTransactions.length} |
+                Сумма:{' '}
+                <span className={
+                  drillDownTransactions.reduce((s, t) => s + (t.type === 'income' ? t.amount : -t.amount), 0) >= 0
+                    ? 'text-emerald-600'
+                    : 'text-red-600'
+                }>
+                  {formatRuble(drillDownTransactions.reduce((s, t) => s + (t.type === 'income' ? t.amount : -t.amount), 0))}
+                </span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

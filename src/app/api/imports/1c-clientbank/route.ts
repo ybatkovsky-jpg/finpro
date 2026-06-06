@@ -78,6 +78,25 @@ function parseRussianDate(dateStr: string): Date | null {
   return null;
 }
 
+// Keyword-to-category mapping for auto-classification
+const keywordMap: Record<string, string> = {
+  'дсп': 'ДСП',
+  'мдф': 'ДСП',
+  'фанер': 'ДСП',
+  'фурнитур': 'Фурнитура',
+  'петл': 'Фурнитура',
+  'направляющ': 'Фурнитура',
+  'ручк': 'Фурнитура',
+  'ткань': 'Ткань',
+  'обивк': 'Ткань',
+  'поролон': 'Поролон',
+  'зарплат': 'Зарплата',
+  'аренд': 'Аренда',
+  'транспорт': 'Транспорт',
+  'доставк': 'Транспорт',
+  'реклам': 'Реклама',
+};
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -119,6 +138,9 @@ export async function POST(request: NextRequest) {
     const defaultExpenseCategory = await db.category.findFirst({
       where: { type: 'expense' },
     });
+
+    // Pre-load all categories for keyword-based classification
+    const allCategories = await db.category.findMany();
 
     // Get a default user for createdBy
     const defaultUser = await db.user.findFirst();
@@ -163,6 +185,7 @@ export async function POST(request: NextRequest) {
         const projectMatch = doc.description.match(/проект\s*№\s*(ПМ\d+)/i);
         let projectId: string | null = null;
         let requiresClassification = false;
+        let categoryId: string | undefined;
 
         if (projectMatch) {
           const externalId = projectMatch[1];
@@ -174,8 +197,73 @@ export async function POST(request: NextRequest) {
           } else {
             requiresClassification = true;
           }
-        } else {
+        }
+
+        // --- Counterparty-based classification ---
+        // Find matching counterparty in DB
+        if (doc.payerOrPayee) {
+          const matchedCounterparty = await db.counterparty.findUnique({
+            where: { name: doc.payerOrPayee },
+          });
+
+          if (matchedCounterparty) {
+            if (matchedCounterparty.type === 'customer') {
+              // Customer → income category "Выручка от реализации"
+              const revenueCategory = allCategories.find(
+                (c) => c.type === 'income' && c.name.toLowerCase().includes('выручк')
+              );
+              if (revenueCategory) {
+                categoryId = revenueCategory.id;
+              }
+            } else if (matchedCounterparty.type === 'supplier') {
+              // Supplier → try keyword-based expense category, or find first matching expense category
+              const keywordCategoryName = findKeywordCategoryName(doc.description);
+              if (keywordCategoryName) {
+                const expenseCat = allCategories.find(
+                  (c) => c.type === 'expense' && c.name === keywordCategoryName
+                );
+                if (expenseCat) {
+                  categoryId = expenseCat.id;
+                }
+              }
+              // If no keyword match, try to find an expense category from the counterparty name keywords
+              if (!categoryId) {
+                const nameKeywordCat = findKeywordCategoryName(doc.payerOrPayee);
+                if (nameKeywordCat) {
+                  const expenseCat = allCategories.find(
+                    (c) => c.type === 'expense' && c.name === nameKeywordCat
+                  );
+                  if (expenseCat) {
+                    categoryId = expenseCat.id;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // --- Keyword-based category classification ---
+        // If counterparty-based classification didn't yield a category, try keywords
+        if (!categoryId) {
+          const keywordCategoryName = findKeywordCategoryName(doc.description);
+          if (keywordCategoryName) {
+            const cat = allCategories.find(
+              (c) => c.type === type && c.name === keywordCategoryName
+            );
+            if (cat) {
+              categoryId = cat.id;
+            }
+          }
+        }
+
+        // If still no category found, set requiresClassification
+        if (!categoryId) {
           requiresClassification = true;
+          // Fallback to default category
+          categoryId =
+            type === 'income'
+              ? defaultIncomeCategory?.id
+              : defaultExpenseCategory?.id;
         }
 
         if (requiresClassification) {
@@ -197,12 +285,6 @@ export async function POST(request: NextRequest) {
             counterpartyId = newCounterparty.id;
           }
         }
-
-        // Use appropriate default category
-        const categoryId =
-          type === 'income'
-            ? defaultIncomeCategory?.id
-            : defaultExpenseCategory?.id;
 
         if (!categoryId) {
           errors.push(
@@ -254,4 +336,17 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Search the description for keywords and return the matching category name.
+ */
+function findKeywordCategoryName(description: string): string | null {
+  const lowerDesc = description.toLowerCase();
+  for (const [keyword, categoryName] of Object.entries(keywordMap)) {
+    if (lowerDesc.includes(keyword)) {
+      return categoryName;
+    }
+  }
+  return null;
 }

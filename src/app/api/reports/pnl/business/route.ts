@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
     const projectMap = new Map<
       string,
       {
+        projectId: string;
         projectName: string;
         revenue: number;
         cogs: number;
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
       const projectId = t.projectId;
       if (!projectMap.has(projectId)) {
         projectMap.set(projectId, {
+          projectId,
           projectName: t.project.name,
           revenue: 0,
           cogs: 0,
@@ -87,7 +89,8 @@ export async function GET(request: NextRequest) {
 
     // Calculate gross profit for each project
     const projectBreakdown = Array.from(projectMap.values()).map((p) => ({
-      ...p,
+      projectId: p.projectId,
+      projectName: p.projectName,
       revenue: Math.round(p.revenue * 100) / 100,
       cogs: Math.round(p.cogs * 100) / 100,
       grossProfit: Math.round((p.revenue - p.cogs) * 100) / 100,

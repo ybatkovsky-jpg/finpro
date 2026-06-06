@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 
 interface CsvRow {
   date: string;
@@ -110,6 +113,21 @@ function parseCSV(content: string): { rows: CsvRow[]; controlSum: number | null 
 
 export async function POST(request: NextRequest) {
   try {
+    // RBAC: require owner or accountant
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
+    }
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
+    }
+    try {
+      requireRole(user, 'owner', 'accountant');
+    } catch {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+    }
+
     const formData = await request.formData();
     const file = formData.get('file');
 
@@ -148,15 +166,6 @@ export async function POST(request: NextRequest) {
           actualSum: Math.round(rowSum * 100) / 100,
         },
         { status: 400 }
-      );
-    }
-
-    // Get default user for createdBy
-    const defaultUser = await db.user.findFirst();
-    if (!defaultUser) {
-      return NextResponse.json(
-        { error: 'No user found in system' },
-        { status: 500 }
       );
     }
 
@@ -258,7 +267,7 @@ export async function POST(request: NextRequest) {
             projectId,
             categoryId,
             counterpartyId,
-            createdBy: defaultUser.id,
+            createdBy: user.id,
             date,
             amount,
             type: row.type,

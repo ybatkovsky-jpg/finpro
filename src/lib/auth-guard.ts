@@ -1,9 +1,10 @@
-import { getServerSession } from "next-auth"
+import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 
 /**
  * Get the current authenticated user from the session.
  * Returns null if not authenticated.
+ * The returned user object contains id, email, name, role from the JWT token.
  */
 export async function getCurrentUser() {
   const session = await getServerSession(authOptions)
@@ -11,12 +12,15 @@ export async function getCurrentUser() {
 }
 
 /**
- * Require that the current user has one of the specified roles.
- * Throws an error if the user is not authenticated or not in the required role.
+ * Require that the given user has one of the specified roles.
+ * Throws an error if the user is null or not in the required role.
+ *
+ * Usage: requireRole(user, 'owner', 'accountant')
  */
-export async function requireRole(...roles: string[]) {
-  const user = await getCurrentUser()
-
+export function requireRole(
+  user: { role: string } | null,
+  ...roles: string[]
+): void {
   if (!user) {
     throw new Error("Требуется авторизация")
   }
@@ -24,8 +28,6 @@ export async function requireRole(...roles: string[]) {
   if (!roles.includes(user.role)) {
     throw new Error("Недостаточно прав для выполнения действия")
   }
-
-  return user
 }
 
 /**

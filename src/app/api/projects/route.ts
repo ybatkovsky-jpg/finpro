@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 
 const VALID_STATUSES = ['lead', 'active', 'completed', 'cancelled'];
 const EXTERNAL_ID_PATTERN = /^ПМ\d{6}$/;
@@ -60,6 +63,21 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // RBAC: require owner or manager
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
+    }
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
+    }
+    try {
+      requireRole(user, 'owner', 'manager');
+    } catch {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+    }
+
     const body = await request.json();
     const {
       externalId,
@@ -124,6 +142,17 @@ export async function POST(request: NextRequest) {
       include: {
         client: { select: { id: true, name: true } },
         manager: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    // Audit log
+    await db.auditLog.create({
+      data: {
+        entityType: 'project',
+        entityId: project.id,
+        action: 'create',
+        changes: JSON.stringify({ name: project.name, externalId: project.externalId }),
+        userId: user.id,
       },
     });
 
