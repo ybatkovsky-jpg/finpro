@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      String   @default("manager") // owner | accountant | manager | storekeeper
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects      Project[]       @relation("ProjectManager")
+  transactions  Transaction[]   @relation("TransactionCreator")
+  auditLogs     AuditLog[]
+}
+
+model Client {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  inn       String?
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
+}
+
+model Counterparty {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  inn       String?
+  type      String?  // supplier | customer | other
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions Transaction[]
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  type      String   // income | expense
+  parentId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent       Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children     Category[]  @relation("CategoryHierarchy")
+  transactions Transaction[]
+}
+
+model Project {
+  id              String    @id @default(uuid())
+  externalId      String    @unique // ПМ000010
+  name            String
+  clientId        String?
+  status          String    @default("lead") // lead | active | completed | cancelled
+  contractAmount  Float?
+  startDate       DateTime?
+  endDate         DateTime?
+  managerId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  client       Client?       @relation(fields: [clientId], references: [id])
+  manager      User?         @relation("ProjectManager", fields: [managerId], references: [id])
+  transactions Transaction[]
+}
+
+model Transaction {
+  id                    String      @id @default(uuid())
+  projectId             String?
+  categoryId            String
+  counterpartyId        String?
+  createdBy             String
+  date                  DateTime
+  amount                Float
+  type                  String      // income | expense
+  description           String?
+  documentUrl           String?
+  source                String      @default("manual") // manual | 1c_clientbank | zakuppro
+  externalId            String?     // Номер документа для дедупликации
+  requiresClassification Boolean    @default(false)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  project     Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  category    Category     @relation(fields: [categoryId], references: [id])
+  counterparty Counterparty? @relation(fields: [counterpartyId], references: [id])
+  creator     User         @relation("TransactionCreator", fields: [createdBy], references: [id])
+  auditLogs   AuditLog[]
+
+  @@unique([externalId, source, date])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  entityType   String   // transaction | project | category
+  entityId     String
+  action       String   // create | update | delete | import
+  changes      String?  // JSON string
+  transactionId String?
+  userId        String
+  createdAt     DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+}
