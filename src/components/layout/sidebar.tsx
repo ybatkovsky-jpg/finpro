@@ -12,6 +12,7 @@ import {
   Upload,
   Tags,
   Users,
+  RefreshCw,
   X,
   LogOut,
 } from 'lucide-react'
@@ -31,6 +32,7 @@ const navItems: { view: View; label: string; icon: React.ElementType; group: str
   { view: 'transactions', label: 'Транзакции', icon: ArrowLeftRight, group: 'Основное' },
   { view: 'projects', label: 'Проекты', icon: FolderKanban, group: 'Основное' },
   { view: 'reports', label: 'Отчёты P&L', icon: BarChart3, group: 'Аналитика' },
+  { view: 'sync', label: 'Синхронизация', icon: RefreshCw, group: 'Аналитика' },
   { view: 'import', label: 'Импорт', icon: Upload, group: 'Аналитика' },
   { view: 'categories', label: 'Категории', icon: Tags, group: 'Справочники' },
   { view: 'counterparties', label: 'Контрагенты', icon: Users, group: 'Справочники' },
