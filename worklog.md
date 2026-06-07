@@ -31,3 +31,41 @@ Stage Summary:
 - P&L reports calculate correctly (Revenue, COGS, Gross Profit, EBIT, USN Tax, Net Profit)
 - Transaction CRUD with validation (amount > 0, future date warning, audit logging)
 - Import endpoints for 1C ClientBank and CSV formats
+
+---
+Task ID: 2
+Agent: main
+Task: Implement FinPro Stage 2 — budgets, cash flow, notifications, audit, users, real ZakupPro API
+
+Work Log:
+- Added ZAKUPPRO_API_KEY and ZAKUPPRO_API_URL to .env
+- Extended Prisma schema with 4 new models: Budget, CashFlowPayment, Notification, SyncLog
+- Pushed updated schema to SQLite database
+- Created real ZakupPro API client (src/lib/zakuppro.ts) with:
+  - fetchZakupProProjects() — paginated API fetch
+  - validateZakupProConnection() — connectivity check
+  - mapZakupProStatus() — status mapping (Russian → FinPro)
+- Updated /api/sync/zakuppro route: replaced mock with real API calls, added GET for status check, SyncLog recording
+- Created Budget API: GET/POST /api/budgets, PUT/DELETE /api/budgets/[id] with plan vs actual calculation
+- Created Cash Flow API: GET/POST /api/cashflow, PUT/DELETE /api/cashflow/[id] with cash gap detection
+- Created Notifications API: GET/POST/PUT /api/notifications, PUT/DELETE /api/notifications/[id]
+- Created Audit API: GET /api/audit with filters (entityType, action, date range) and pagination
+- Updated Users API: GET/POST /api/users (owner-only), PUT/DELETE /api/users/[id] with soft-delete
+- Added 5 new views: BudgetsView, CashFlowView, NotificationsView, AuditView, UsersView
+- Enhanced DashboardView: 5 KPI cards, 4 charts (bar, line, category breakdown, budget overview), cash flow overview
+- Updated SyncView: connection status card, API key status, last sync info
+- Updated Sidebar: 5 groups (Основное, Планирование, Аналитика, Справочники, Администрирование) with role-based filtering
+- Updated Store: added 'budgets', 'cashflow', 'notifications', 'audit', 'users' views
+- Seeded Stage 2 demo data: 12 budgets, 14 cash flow payments, 6 notifications, 2 sync logs
+- Build passed successfully
+- Committed and pushed to GitHub (commit 1e891f6)
+
+Stage Summary:
+- Stage 2 fully implemented with 6 new modules
+- Budget tracking: plan vs actual per project/category with utilization percentage
+- Cash Flow: payment calendar, forecast, cash gap detection (July 2026 gap: 275K RUB)
+- Notifications: budget overruns, cash gaps, project deadlines, sync errors
+- User Management: CRUD with RBAC (owner-only admin access)
+- Audit Log: filterable activity log with pagination
+- Real ZakupPro API: paginated project fetch with status mapping and sync logging
+- Enhanced Dashboard: 5 KPIs, trend charts, category breakdown, budget execution overview
