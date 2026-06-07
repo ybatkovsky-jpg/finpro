@@ -52,3 +52,17 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Database
+db/*.db
+db/*.db-journal
+
+# Docker
+.env.docker
+.env.production
+
+# Prisma
+prisma/schema.backup.prisma
+
+# Uploads
+/upload/

@@ -13,7 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ProjectForm } from '@/components/projects/project-form'
-import { Plus, ArrowLeft, Building2 } from 'lucide-react'
+import { Plus, ArrowLeft, Building2, Target, Clock, AlertTriangle } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 
 const rubleFormatter = new Intl.NumberFormat('ru-RU', {
@@ -36,6 +36,8 @@ interface Project {
   contractAmount: number | null
   startDate: string | null
   endDate: string | null
+  marginTarget: number
+  qualityRating: string
   clientId: string | null
   managerId: string | null
   client: { id: string; name: string } | null
@@ -66,6 +68,13 @@ export function ProjectsView() {
   const [editProject, setEditProject] = useState<Project | null>(null)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [projectDetail, setProjectDetail] = useState<Project | null>(null)
+  const [marginData, setMarginData] = useState<Array<{
+    id: string
+    currentMargin: number
+    marginTarget: number
+    marginStatus: string
+    deadlineStatus: string
+  }> | null>(null)
   const setView = useAppStore((s) => s.setView)
 
   const fetchProjects = useCallback(async () => {
@@ -84,6 +93,13 @@ export function ProjectsView() {
   useEffect(() => {
     fetchProjects()
   }, [fetchProjects])
+
+  useEffect(() => {
+    fetch('/api/margin')
+      .then((r) => r.json())
+      .then((d) => d.projects ? setMarginData(d.projects) : null)
+      .catch(() => {})
+  }, [])
 
   const handleCardClick = async (project: Project) => {
     try {
@@ -284,6 +300,32 @@ export function ProjectsView() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map((p) => {
             const sc = statusConfig[p.status] || statusConfig.lead
+            const md = marginData?.find((m) => m.id === p.id)
+            const currentMargin = md?.currentMargin ?? 0
+            const marginTarget = md?.marginTarget ?? p.marginTarget ?? 0.25
+            const marginStatus = md?.marginStatus
+            const deadlineStatus = md?.deadlineStatus
+
+            // Calculate margin color without margin data
+            let marginColor = 'text-slate-400'
+            let progressBarColor = 'bg-slate-300'
+            if (md) {
+              if (marginStatus === 'on_target') {
+                marginColor = 'text-emerald-600'
+                progressBarColor = 'bg-emerald-500'
+              } else if (marginStatus === 'at_risk') {
+                marginColor = 'text-amber-600'
+                progressBarColor = 'bg-amber-500'
+              } else if (marginStatus === 'below_target') {
+                marginColor = 'text-red-600'
+                progressBarColor = 'bg-red-500'
+              }
+            }
+
+            const marginPct = currentMargin * 100
+            const targetPct = marginTarget * 100
+            const progressRatio = targetPct > 0 ? Math.min((marginPct / targetPct) * 100, 150) : 0
+
             return (
               <Card
                 key={p.id}
@@ -322,6 +364,49 @@ export function ProjectsView() {
                         <span className="text-muted-foreground">Менеджер</span>
                         <span className="text-xs">{p.manager.name}</span>
                       </div>
+                    )}
+                    {/* Margin indicator */}
+                    {md && (
+                      <>
+                        <div className="pt-2 border-t">
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Target className="h-3 w-3" />
+                              Маржа
+                            </span>
+                            <span className={`font-semibold ${marginColor}`}>
+                              {marginPct.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${progressBarColor}`}
+                                style={{ width: `${Math.min(progressRatio, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                              цель {targetPct.toFixed(0)}%
+                            </span>
+                          </div>
+                        </div>
+                        {/* Deadline badge */}
+                        {deadlineStatus && deadlineStatus !== 'no_deadline' && p.endDate && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              Срок
+                            </span>
+                            {deadlineStatus === 'overdue' ? (
+                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Просрочен</Badge>
+                            ) : deadlineStatus === 'approaching' ? (
+                              <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">Скоро</Badge>
+                            ) : (
+                              <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">В срок</Badge>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </CardContent>

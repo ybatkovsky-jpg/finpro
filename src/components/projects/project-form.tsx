@@ -36,6 +36,10 @@ const projectSchema = z.object({
   status: z.enum(['lead', 'active', 'completed', 'cancelled']),
   contractAmount: z.coerce.number().optional(),
   managerId: z.string().optional(),
+  marginTarget: z.coerce.number().min(0).max(1).optional(),
+  qualityRating: z.enum(['good', 'acceptable', 'poor']).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
 })
 
 type ProjectFormValues = z.infer<typeof projectSchema>
@@ -59,6 +63,10 @@ interface Project {
   status: string
   contractAmount?: number | null
   managerId?: string | null
+  marginTarget?: number | null
+  qualityRating?: string | null
+  startDate?: string | null
+  endDate?: string | null
 }
 
 interface ProjectFormProps {
@@ -73,6 +81,12 @@ const statusLabels: Record<string, string> = {
   active: 'Активный',
   completed: 'Завершён',
   cancelled: 'Отменён',
+}
+
+const qualityLabels: Record<string, string> = {
+  good: 'Хорошее',
+  acceptable: 'Приемлемое',
+  poor: 'Требует доработки',
 }
 
 export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectFormProps) {
@@ -91,6 +105,10 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
       status: 'lead',
       contractAmount: undefined,
       managerId: '',
+      marginTarget: 0.25,
+      qualityRating: 'acceptable',
+      startDate: '',
+      endDate: '',
     },
   })
 
@@ -109,6 +127,10 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         status: project.status as ProjectFormValues['status'],
         contractAmount: project.contractAmount || undefined,
         managerId: project.managerId || '',
+        marginTarget: project.marginTarget ?? 0.25,
+        qualityRating: (project.qualityRating as ProjectFormValues['qualityRating']) || 'acceptable',
+        startDate: project.startDate ? project.startDate.split('T')[0] : '',
+        endDate: project.endDate ? project.endDate.split('T')[0] : '',
       })
     } else {
       form.reset({
@@ -118,6 +140,10 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         status: 'lead',
         contractAmount: undefined,
         managerId: '',
+        marginTarget: 0.25,
+        qualityRating: 'acceptable',
+        startDate: '',
+        endDate: '',
       })
     }
   }, [project, form])
@@ -130,6 +156,10 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         clientId: values.clientId && values.clientId !== 'none' ? values.clientId : null,
         contractAmount: values.contractAmount || null,
         managerId: values.managerId || null,
+        marginTarget: values.marginTarget ?? 0.25,
+        qualityRating: values.qualityRating || 'acceptable',
+        startDate: values.startDate || null,
+        endDate: values.endDate || null,
       }
 
       if (isEditing && project?.id) {
@@ -272,6 +302,86 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="marginTarget"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Целевая маржа (%)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="1"
+                      placeholder="0.25"
+                      value={field.value != null ? (field.value * 100).toFixed(0) : '25'}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        field.onChange(isNaN(val) ? 0.25 : val / 100)
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="qualityRating"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Качество</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {Object.entries(qualityLabels).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="startDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Дата начала</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="endDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Дата окончания</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <div className="flex justify-end gap-3 pt-2">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

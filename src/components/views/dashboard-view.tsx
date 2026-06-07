@@ -51,6 +51,14 @@ interface DashboardData {
     profit: number
     margin: number
   }>
+  marginAlerts?: Array<{
+    projectId: string
+    projectName: string
+    currentMargin: number
+    marginTarget: number
+    gap: number
+    severity: 'critical' | 'warning'
+  }>
 }
 
 const rubleFormatter = new Intl.NumberFormat('ru-RU', {
@@ -122,6 +130,14 @@ export function DashboardView() {
     netConfirmed: number
     netForecast: number
   } | null>(null)
+  const [marginAlerts, setMarginAlerts] = useState<Array<{
+    projectId: string
+    projectName: string
+    currentMargin: number
+    marginTarget: number
+    gap: number
+    severity: 'critical' | 'warning'
+  }> | null>(null)
 
   useEffect(() => {
     fetch('/api/dashboard')
@@ -142,6 +158,12 @@ export function DashboardView() {
     fetch('/api/cashflow')
       .then(res => res.ok ? res.json() : null)
       .then(d => d?.summary ? setCashFlowSummary(d.summary) : null)
+      .catch(() => {})
+
+    // Fetch margin alerts
+    fetch('/api/margin')
+      .then(res => res.ok ? res.json() : null)
+      .then(d => d?.alerts ? setMarginAlerts(d.alerts) : null)
       .catch(() => {})
   }, [])
 
@@ -464,7 +486,16 @@ export function DashboardView() {
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Badge variant={p.margin >= 0.2 ? 'default' : 'secondary'} className="text-xs">
+                        <Badge
+                          variant={p.margin >= 0.25 ? 'default' : p.margin >= 0.175 ? 'secondary' : 'destructive'}
+                          className={`text-xs ${
+                            p.margin >= 0.25
+                              ? 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                              : p.margin >= 0.175
+                                ? 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                : 'bg-red-100 text-red-700 border-red-200 hover:bg-red-100'
+                          }`}
+                        >
                           {(p.margin * 100).toFixed(1)}%
                         </Badge>
                       </TableCell>
@@ -518,6 +549,42 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Margin Alerts */}
+      {marginAlerts && marginAlerts.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2 text-amber-700">
+              <AlertCircle className="h-4 w-4" />
+              Маржинальные предупреждения
+            </CardTitle>
+            <CardDescription>
+              {marginAlerts.length} проект(ов) ниже целевой маржи
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {marginAlerts.slice(0, 3).map((alert) => (
+                <div key={alert.projectId} className="flex items-center gap-3 text-sm">
+                  <Badge
+                    className={`${
+                      alert.severity === 'critical'
+                        ? 'bg-red-100 text-red-700 border-red-200'
+                        : 'bg-amber-100 text-amber-700 border-amber-200'
+                    }`}
+                  >
+                    {alert.severity === 'critical' ? 'Критично' : 'Риск'}
+                  </Badge>
+                  <span className="font-medium">{alert.projectName}</span>
+                  <span className="text-muted-foreground">
+                    Маржа {(alert.currentMargin * 100).toFixed(1)}% (цель {(alert.marginTarget * 100).toFixed(0)}%)
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Transactions */}
       <Card>

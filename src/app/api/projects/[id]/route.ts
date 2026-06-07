@@ -101,6 +101,8 @@ export async function PUT(
       'status',
       'contractAmount',
       'managerId',
+      'marginTarget',
+      'qualityRating',
     ];
 
     for (const field of allowedFields) {

@@ -20,6 +20,9 @@ import {
   Bell,
   ShieldCheck,
   UserCog,
+  Target,
+  Filter,
+  Lock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -39,12 +42,15 @@ const navItems: { view: View; label: string; icon: React.ElementType; group: str
   { view: 'budgets', label: 'Бюджеты', icon: PiggyBank, group: 'Планирование' },
   { view: 'cashflow', label: 'Cash Flow', icon: Wallet, group: 'Планирование' },
   { view: 'reports', label: 'Отчёты P&L', icon: BarChart3, group: 'Аналитика' },
+  { view: 'margin', label: 'Маржинальность', icon: Target, group: 'Аналитика' },
   { view: 'sync', label: 'Синхронизация', icon: RefreshCw, group: 'Аналитика' },
   { view: 'import', label: 'Импорт', icon: Upload, group: 'Аналитика' },
   { view: 'categories', label: 'Категории', icon: Tags, group: 'Справочники' },
   { view: 'counterparties', label: 'Контрагенты', icon: Users, group: 'Справочники' },
+  { view: 'classification-rules', label: 'Правила классификации', icon: Filter, group: 'Справочники' },
   { view: 'users', label: 'Пользователи', icon: UserCog, group: 'Администрирование', roles: ['owner'] },
   { view: 'audit', label: 'Журнал аудита', icon: ShieldCheck, group: 'Администрирование', roles: ['owner', 'accountant'] },
+  { view: 'periods', label: 'Закрытие периодов', icon: Lock, group: 'Администрирование', roles: ['owner', 'accountant'] },
   { view: 'notifications', label: 'Уведомления', icon: Bell, group: 'Администрирование' },
 ]
 

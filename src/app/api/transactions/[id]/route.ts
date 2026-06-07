@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
+import { checkPeriodClosed } from '@/lib/period-guard';
 
 export async function GET(
   _request: NextRequest,
@@ -72,6 +73,16 @@ export async function PUT(
     // Manager can only edit their own transactions
     if (user.role === 'manager' && existing.createdBy !== user.id) {
       return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
+    }
+
+    // Check if the transaction date falls in a closed period
+    const dateToCheck = body.date ? new Date(body.date) : existing.date;
+    const periodCheck = await checkPeriodClosed(dateToCheck);
+    if (periodCheck.closed) {
+      return NextResponse.json(
+        { error: `Period is closed (${periodCheck.period}). ${periodCheck.note || ''}`.trim() },
+        { status: 403 }
+      );
     }
 
     // Validation
@@ -181,6 +192,15 @@ export async function DELETE(
       return NextResponse.json(
         { error: 'Transaction not found' },
         { status: 404 }
+      );
+    }
+
+    // Check if the transaction date falls in a closed period
+    const periodCheck = await checkPeriodClosed(existing.date);
+    if (periodCheck.closed) {
+      return NextResponse.json(
+        { error: `Period is closed (${periodCheck.period}). ${periodCheck.note || ''}`.trim() },
+        { status: 403 }
       );
     }
 

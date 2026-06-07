@@ -17,6 +17,9 @@ import { CashFlowView } from '@/components/views/cashflow-view'
 import { NotificationsView } from '@/components/views/notifications-view'
 import { AuditView } from '@/components/views/audit-view'
 import { UsersView } from '@/components/views/users-view'
+import { MarginView } from '@/components/views/margin-view'
+import { ClassificationRulesView } from '@/components/views/classification-rules-view'
+import { PeriodsView } from '@/components/views/periods-view'
 
 const viewTitles: Record<string, string> = {
   dashboard: 'Дашборд',
@@ -32,6 +35,9 @@ const viewTitles: Record<string, string> = {
   notifications: 'Уведомления',
   audit: 'Журнал аудита',
   users: 'Пользователи',
+  margin: 'Маржинальность',
+  'classification-rules': 'Правила классификации',
+  periods: 'Закрытие периодов',
 }
 
 function ViewRenderer() {
@@ -64,6 +70,12 @@ function ViewRenderer() {
       return <AuditView />
     case 'users':
       return <UsersView />
+    case 'margin':
+      return <MarginView />
+    case 'classification-rules':
+      return <ClassificationRulesView />
+    case 'periods':
+      return <PeriodsView />
     default:
       return <DashboardView />
   }

@@ -88,6 +88,8 @@ export async function POST(request: NextRequest) {
       startDate,
       endDate,
       managerId,
+      marginTarget,
+      qualityRating,
     } = body;
 
     // Validation
@@ -138,6 +140,8 @@ export async function POST(request: NextRequest) {
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
         managerId: managerId || null,
+        marginTarget: marginTarget ?? 0.25,
+        qualityRating: qualityRating || null,
       },
       include: {
         client: { select: { id: true, name: true } },

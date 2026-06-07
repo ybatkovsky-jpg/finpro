@@ -1,0 +1,74 @@
+# ============================
+# FinPro — Docker Compose
+# Production deployment for Timeweb Cloud
+# ============================
+
+version: "3.9"
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: finpro
+      POSTGRES_USER: finpro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finpro_secure_2026}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finpro"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://finpro:${POSTGRES_PASSWORD:-finpro_secure_2026}@db:5432/finpro?schema=public
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-finpro-secret-key-change-in-production-2026}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      API_KEYS: ${API_KEYS:-finpro-api-key-2026-prod}
+      ZAKUPPRO_API_KEY: ${ZAKUPPRO_API_KEY}
+      ZAKUPPRO_API_URL: ${ZAKUPPRO_API_URL:-https://zakuppro.ru/api/v1}
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/upload
+      - 1c_import:/app/1c-import
+
+  # Caddy Reverse Proxy
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+    driver: local
+  uploads:
+    driver: local
+  1c_import:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { checkPeriodClosed } from '@/lib/period-guard';
 
 interface ParsedDocument {
   number: string;
@@ -10,27 +11,63 @@ interface ParsedDocument {
 }
 
 /**
- * Detect if file content is UTF-8 encoded rather than Windows-1251.
- * 1C ClientBank format standard requires Windows-1251 encoding.
- * Spec: "File in UTF-8 → 400 Bad Request: Invalid encoding. Expected Windows-1251"
+ * Try to decode raw bytes as Windows-1251.
+ * Uses TextDecoder with 'windows-1251' encoding label.
  */
-function isUtf8Encoded(content: string, rawBytes: Uint8Array): boolean {
-  // Check 1: UTF-8 BOM (EF BB BF)
+function decodeWindows1251(rawBytes: Uint8Array): string {
+  try {
+    const decoder = new TextDecoder('windows-1251');
+    return decoder.decode(rawBytes);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Decode raw bytes as UTF-8.
+ */
+function decodeUtf8(rawBytes: Uint8Array): string {
+  const decoder = new TextDecoder('utf-8');
+  return decoder.decode(rawBytes);
+}
+
+/**
+ * Detect encoding and decode the file content.
+ * Strategy:
+ *   1. Try Win-1251 decoding first
+ *   2. If Win-1251 decoded text contains valid 1C markers, use it
+ *   3. If Win-1251 decode fails or no markers, try UTF-8 as fallback
+ *   4. Accept both encodings, just log which encoding was detected
+ */
+function detectAndDecode(rawBytes: Uint8Array): { content: string; encoding: string } {
+  // Check for UTF-8 BOM first
   if (rawBytes.length >= 3 && rawBytes[0] === 0xEF && rawBytes[1] === 0xBB && rawBytes[2] === 0xBF) {
-    return true;
+    return { content: decodeUtf8(rawBytes), encoding: 'utf-8-bom' };
   }
 
-  // Check 2: If the text read as UTF-8 contains valid Cyrillic 1C markers,
-  // the file was saved as UTF-8, not Windows-1251.
-  // Windows-1251 Cyrillic bytes (0xC0-0xFF) read as UTF-8 would produce
-  // replacement characters (U+FFFD) or garbled text, not valid Russian words.
-  const has1CMarkers = content.includes('СекцияДокумент') || content.includes('КонецФайла');
-  if (has1CMarkers) {
-    // The Cyrillic markers are readable as UTF-8 → file was UTF-8 encoded
-    return true;
+  // Try Win-1251 first
+  const win1251Content = decodeWindows1251(rawBytes);
+  if (win1251Content) {
+    const has1CMarkers = win1251Content.includes('СекцияДокумент') || win1251Content.includes('КонецФайла');
+    if (has1CMarkers) {
+      // Content decoded from Win-1251 has valid 1C Cyrillic markers
+      return { content: win1251Content, encoding: 'windows-1251' };
+    }
   }
 
-  return false;
+  // Try UTF-8 as fallback
+  const utf8Content = decodeUtf8(rawBytes);
+  const hasUtf8Markers = utf8Content.includes('СекцияДокумент') || utf8Content.includes('КонецФайла');
+  if (hasUtf8Markers) {
+    return { content: utf8Content, encoding: 'utf-8' };
+  }
+
+  // If no markers found in either, return Win-1251 if it had any content, else UTF-8
+  if (win1251Content) {
+    return { content: win1251Content, encoding: 'windows-1251' };
+  }
+
+  return { content: utf8Content, encoding: 'utf-8' };
 }
 
 function parse1CClientBank(content: string): ParsedDocument[] {
@@ -78,7 +115,7 @@ function parseRussianDate(dateStr: string): Date | null {
   return null;
 }
 
-// Keyword-to-category mapping for auto-classification
+// Hardcoded keyword-to-category mapping as fallback
 const keywordMap: Record<string, string> = {
   'дсп': 'ДСП',
   'мдф': 'ДСП',
@@ -97,6 +134,55 @@ const keywordMap: Record<string, string> = {
   'реклам': 'Реклама',
 };
 
+/**
+ * Find keyword category name using classification rules first, then fallback to hardcoded map.
+ */
+async function findClassificationCategory(
+  description: string,
+  counterpartyName?: string
+): Promise<{ categoryId: string | null; projectId: string | null; source: string }> {
+  // 1. Check ClassificationRule table (ordered by priority desc)
+  const rules = await db.classificationRule.findMany({
+    where: { isActive: true },
+    include: {
+      category: { select: { id: true, name: true, type: true } },
+      project: { select: { id: true, name: true } },
+    },
+    orderBy: { priority: 'desc' },
+  });
+
+  const lowerDesc = description.toLowerCase();
+  const lowerCounterparty = (counterpartyName || '').toLowerCase();
+
+  for (const rule of rules) {
+    const keywordMatch = lowerDesc.includes(rule.keyword.toLowerCase());
+    const counterpartyMatch = !rule.counterpartyKeyword || lowerCounterparty.includes(rule.counterpartyKeyword.toLowerCase());
+
+    if (keywordMatch && counterpartyMatch) {
+      return {
+        categoryId: rule.categoryId,
+        projectId: rule.projectId,
+        source: 'classification_rule',
+      };
+    }
+  }
+
+  return { categoryId: null, projectId: null, source: 'none' };
+}
+
+/**
+ * Fallback: search the description for hardcoded keywords and return the matching category name.
+ */
+function findKeywordCategoryName(description: string): string | null {
+  const lowerDesc = description.toLowerCase();
+  for (const [keyword, categoryName] of Object.entries(keywordMap)) {
+    if (lowerDesc.includes(keyword)) {
+      return categoryName;
+    }
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -113,22 +199,23 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const rawBytes = new Uint8Array(arrayBuffer);
 
-    // Read as text (UTF-8 by default)
-    const content = new TextDecoder().decode(rawBytes);
+    // Detect encoding and decode
+    const { content, encoding } = detectAndDecode(rawBytes);
+    console.log(`1C Import: Detected encoding: ${encoding}`);
 
-    // Encoding check: reject UTF-8 files, require Windows-1251
-    if (isUtf8Encoded(content, rawBytes)) {
+    const documents = parse1CClientBank(content);
+
+    if (documents.length === 0 && !content.includes('СекцияДокумент')) {
       return NextResponse.json(
-        { error: 'Invalid encoding. Expected Windows-1251' },
+        { error: 'Invalid 1C ClientBank file format. No document sections found.' },
         { status: 400 }
       );
     }
 
-    const documents = parse1CClientBank(content);
-
     let imported = 0;
     let duplicatesSkipped = 0;
     let pendingClassification = 0;
+    let closedPeriodSkipped = 0;
     const errors: string[] = [];
 
     // Get or create default categories for auto-classification
@@ -158,14 +245,19 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        // Period close check
+        const periodCheck = await checkPeriodClosed(parsedDate);
+        if (periodCheck.closed) {
+          closedPeriodSkipped++;
+          errors.push(`Period is closed (${periodCheck.period}) for document ${doc.number}`);
+          continue;
+        }
+
         // Determine transaction type based on description or amount sign
-        // In 1C ClientBank format, we typically need additional context
-        // For now, default to expense if amount is debited, income if credited
         const type = doc.amount > 0 ? 'expense' : 'income';
         const absAmount = Math.abs(doc.amount);
 
-        // Deduplication: check if transaction with same Номер+Дата (externalId+source+date) exists
-        // Spec: "Re-import same Номер+Дата → duplicates_skipped += 1, no duplicates in DB"
+        // Deduplication: check if transaction with same Номер+Дата exists
         const existing = await db.transaction.findUnique({
           where: {
             externalId_source_date: {
@@ -181,34 +273,47 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Auto-classify: try to match project by regex on description
-        const projectMatch = doc.description.match(/проект\s*№\s*(ПМ\d+)/i);
+        // Auto-classify using ClassificationRule table first
         let projectId: string | null = null;
         let requiresClassification = false;
         let categoryId: string | undefined;
 
-        if (projectMatch) {
-          const externalId = projectMatch[1];
-          const project = await db.project.findUnique({
-            where: { externalId },
-          });
-          if (project) {
-            projectId = project.id;
-          } else {
-            requiresClassification = true;
+        const classification = await findClassificationCategory(
+          doc.description,
+          doc.payerOrPayee
+        );
+
+        if (classification.categoryId) {
+          categoryId = classification.categoryId;
+          if (classification.projectId) {
+            projectId = classification.projectId;
           }
         }
 
-        // --- Counterparty-based classification ---
-        // Find matching counterparty in DB
-        if (doc.payerOrPayee) {
+        // If classification rules didn't find a match, try project regex match
+        if (!projectId) {
+          const projectMatch = doc.description.match(/проект\s*№\s*(ПМ\d+)/i);
+          if (projectMatch) {
+            const externalId = projectMatch[1];
+            const project = await db.project.findUnique({
+              where: { externalId },
+            });
+            if (project) {
+              projectId = project.id;
+            } else {
+              requiresClassification = true;
+            }
+          }
+        }
+
+        // Counterparty-based classification (if no category from rules)
+        if (!categoryId && doc.payerOrPayee) {
           const matchedCounterparty = await db.counterparty.findUnique({
             where: { name: doc.payerOrPayee },
           });
 
           if (matchedCounterparty) {
             if (matchedCounterparty.type === 'customer') {
-              // Customer → income category "Выручка от реализации"
               const revenueCategory = allCategories.find(
                 (c) => c.type === 'income' && c.name.toLowerCase().includes('выручк')
               );
@@ -216,7 +321,6 @@ export async function POST(request: NextRequest) {
                 categoryId = revenueCategory.id;
               }
             } else if (matchedCounterparty.type === 'supplier') {
-              // Supplier → try keyword-based expense category, or find first matching expense category
               const keywordCategoryName = findKeywordCategoryName(doc.description);
               if (keywordCategoryName) {
                 const expenseCat = allCategories.find(
@@ -226,7 +330,6 @@ export async function POST(request: NextRequest) {
                   categoryId = expenseCat.id;
                 }
               }
-              // If no keyword match, try to find an expense category from the counterparty name keywords
               if (!categoryId) {
                 const nameKeywordCat = findKeywordCategoryName(doc.payerOrPayee);
                 if (nameKeywordCat) {
@@ -242,8 +345,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // --- Keyword-based category classification ---
-        // If counterparty-based classification didn't yield a category, try keywords
+        // Keyword-based category classification (hardcoded fallback)
         if (!categoryId) {
           const keywordCategoryName = findKeywordCategoryName(doc.description);
           if (keywordCategoryName) {
@@ -259,7 +361,6 @@ export async function POST(request: NextRequest) {
         // If still no category found, set requiresClassification
         if (!categoryId) {
           requiresClassification = true;
-          // Fallback to default category
           categoryId =
             type === 'income'
               ? defaultIncomeCategory?.id
@@ -322,11 +423,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Update ImportConfig lastImportAt
+    await db.importConfig.upsert({
+      where: { source: '1c_clientbank' },
+      update: { lastImportAt: new Date() },
+      create: {
+        source: '1c_clientbank',
+        autoImport: false,
+        autoClassify: true,
+        lastImportAt: new Date(),
+      },
+    });
+
     return NextResponse.json({
       totalProcessed: documents.length,
       imported,
       duplicatesSkipped,
       pendingClassification,
+      closedPeriodSkipped,
+      encoding,
       errors,
     });
   } catch (error) {
@@ -336,17 +451,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-/**
- * Search the description for keywords and return the matching category name.
- */
-function findKeywordCategoryName(description: string): string | null {
-  const lowerDesc = description.toLowerCase();
-  for (const [keyword, categoryName] of Object.entries(keywordMap)) {
-    if (lowerDesc.includes(keyword)) {
-      return categoryName;
-    }
-  }
-  return null;
 }

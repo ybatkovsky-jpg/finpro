@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
+import { checkPeriodClosed } from '@/lib/period-guard';
 
 export async function GET(request: NextRequest) {
   try {
@@ -129,6 +130,16 @@ export async function POST(request: NextRequest) {
     }
 
     const transactionDate = new Date(date);
+
+    // Check if the transaction date falls in a closed period
+    const periodCheck = await checkPeriodClosed(transactionDate);
+    if (periodCheck.closed) {
+      return NextResponse.json(
+        { error: `Period is closed (${periodCheck.period}). ${periodCheck.note || ''}`.trim() },
+        { status: 403 }
+      );
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const isFutureDate = transactionDate > today;

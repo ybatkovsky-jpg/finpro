@@ -8,10 +8,18 @@ async function main() {
   await db.$transaction([
     db.auditLog.deleteMany(),
     db.transaction.deleteMany(),
+    db.budget.deleteMany(),
+    db.classificationRule.deleteMany(),
+    db.cashFlowPayment.deleteMany(),
+    db.notification.deleteMany(),
+    db.syncLog.deleteMany(),
+    db.periodClose.deleteMany(),
+    db.importConfig.deleteMany(),
     db.project.deleteMany(),
     db.category.deleteMany(),
     db.counterparty.deleteMany(),
     db.client.deleteMany(),
+    db.refreshToken.deleteMany(),
     db.user.deleteMany(),
   ])
   console.log('✅ Cleaned up existing data\n')
@@ -197,7 +205,7 @@ async function main() {
       data: { name: 'Прочие расходы', type: 'expense' },
     })
 
-    // --- Projects ---
+    // --- Projects (with marginTarget and deadlineStatus) ---
     const projects = {
       pm000001: await tx.project.create({
         data: {
@@ -208,6 +216,8 @@ async function main() {
           contractAmount: 2500000,
           startDate: new Date('2026-02-15'),
           managerId: users.sidorov.id,
+          marginTarget: 0.25,
+          deadlineStatus: 'on_track',
         },
       }),
       pm000002: await tx.project.create({
@@ -219,6 +229,8 @@ async function main() {
           contractAmount: 1800000,
           startDate: new Date('2026-03-01'),
           managerId: users.sidorov.id,
+          marginTarget: 0.20,
+          deadlineStatus: 'at_risk',
         },
       }),
       pm000003: await tx.project.create({
@@ -230,6 +242,8 @@ async function main() {
           contractAmount: 4200000,
           startDate: new Date('2026-02-01'),
           managerId: users.sidorov.id,
+          marginTarget: 0.30,
+          deadlineStatus: 'on_track',
         },
       }),
       pm000004: await tx.project.create({
@@ -241,7 +255,11 @@ async function main() {
           contractAmount: 950000,
           startDate: new Date('2026-01-10'),
           endDate: new Date('2026-04-20'),
+          completedAt: new Date('2026-04-20'),
           managerId: users.sidorov.id,
+          marginTarget: 0.25,
+          qualityRating: 'good',
+          deadlineStatus: 'on_track',
         },
       }),
       pm000005: await tx.project.create({
@@ -251,6 +269,8 @@ async function main() {
           clientId: clients.morozova.id,
           status: 'lead',
           contractAmount: 1200000,
+          marginTarget: 0.25,
+          deadlineStatus: 'on_track',
         },
       }),
     }
@@ -685,25 +705,174 @@ async function main() {
       ],
     })
 
+    // ─── Stage 2 Seed Data ──────────────────────────────────────────
+
+    // --- Budgets ---
+    const budgetCount = (await tx.budget.createMany({
+      data: [
+        { projectId: projects.pm000001.id, categoryId: catDSP.id, amount: 400000, period: '2026-Q1' },
+        { projectId: projects.pm000001.id, categoryId: catFurniture.id, amount: 80000, period: '2026-Q1' },
+        { projectId: projects.pm000001.id, categoryId: catFabric.id, amount: 100000, period: '2026-Q1' },
+        { projectId: projects.pm000002.id, categoryId: catDSP.id, amount: 200000, period: '2026-Q1' },
+        { projectId: projects.pm000002.id, categoryId: catFurniture.id, amount: 50000, period: '2026-Q1' },
+        { projectId: projects.pm000002.id, categoryId: catTransport.id, amount: 40000, period: '2026-Q1' },
+        { projectId: projects.pm000003.id, categoryId: catDSP.id, amount: 600000, period: '2026-Q1' },
+        { projectId: projects.pm000003.id, categoryId: catFurniture.id, amount: 150000, period: '2026-Q1' },
+        { projectId: projects.pm000003.id, categoryId: catFabric.id, amount: 200000, period: '2026-Q1' },
+        { projectId: projects.pm000003.id, categoryId: catPorolon.id, amount: 120000, period: '2026-Q1' },
+        { projectId: projects.pm000004.id, categoryId: catDSP.id, amount: 80000, period: '2026-Q1' },
+        { projectId: projects.pm000004.id, categoryId: catFurniture.id, amount: 40000, period: '2026-Q1' },
+      ],
+    })).count
+
+    // --- Cash Flow Payments ---
+    const cashflowCount = (await tx.cashFlowPayment.createMany({
+      data: [
+        { date: new Date('2026-06-01'), amount: 150000, type: 'outflow', counterpartyId: counterparties.lestorg.id, projectId: projects.pm000001.id, description: 'Оплата ДСП — июнь', status: 'planned' },
+        { date: new Date('2026-06-05'), amount: 250000, type: 'planned_inflow', counterpartyId: counterparties.stroyinterierCp.id, projectId: projects.pm000001.id, description: 'Ожидаемый платёж — кухни', status: 'planned' },
+        { date: new Date('2026-06-10'), amount: 500000, type: 'planned_inflow', counterpartyId: counterparties.stroyinterierCp.id, projectId: projects.pm000002.id, description: 'Ожидаемый платёж — офисная мебель', status: 'planned' },
+        { date: new Date('2026-06-15'), amount: 280000, type: 'outflow', counterpartyId: counterparties.lestorg.id, projectId: projects.pm000003.id, description: 'Оплата материалов — номерной фонд', status: 'planned' },
+        { date: new Date('2026-06-20'), amount: 150000, type: 'outflow', description: 'Аренда — июнь', status: 'planned' },
+        { date: new Date('2026-06-25'), amount: 290000, type: 'outflow', description: 'Зарплата — июнь', status: 'planned' },
+        { date: new Date('2026-07-01'), amount: 150000, type: 'outflow', description: 'Аренда — июль', status: 'planned' },
+        { date: new Date('2026-07-05'), amount: 450000, type: 'planned_inflow', counterpartyId: counterparties.stroyinterierCp.id, projectId: projects.pm000001.id, description: 'Финальный платёж', status: 'planned' },
+        { date: new Date('2026-07-10'), amount: 800000, type: 'planned_inflow', counterpartyId: counterparties.stroyinterierCp.id, projectId: projects.pm000003.id, description: 'Оплата 2-й очереди номеров', status: 'planned' },
+        { date: new Date('2026-07-15'), amount: 180000, type: 'outflow', counterpartyId: counterparties.tekstilplus.id, projectId: projects.pm000003.id, description: 'Оплата ткани и поролона', status: 'planned' },
+        { date: new Date('2026-07-25'), amount: 290000, type: 'outflow', description: 'Зарплата — июль', status: 'planned' },
+        { date: new Date('2026-08-01'), amount: 150000, type: 'outflow', description: 'Аренда — август', status: 'planned' },
+        { date: new Date('2026-08-15'), amount: 700000, type: 'planned_inflow', counterpartyId: counterparties.stroyinterierCp.id, projectId: projects.pm000003.id, description: 'Финальный платёж — номерной фонд', status: 'planned' },
+        { date: new Date('2026-08-25'), amount: 290000, type: 'outflow', description: 'Зарплата — август', status: 'planned' },
+      ],
+    })).count
+
+    // --- Notifications ---
+    const notificationCount = (await tx.notification.createMany({
+      data: [
+        { userId: users.ivanov.id, type: 'budget_overrun', title: 'Перерасход бюджета', message: 'Расходы по категории "ДСП" проекта "Кухни Модерн" превысили план на 50%', isRead: false, link: '/projects/pm000001' },
+        { userId: users.ivanov.id, type: 'cash_gap', title: 'Кассовый разрыв', message: 'Прогнозируется кассовый разрыв в июле 2026: дефицит 275 000 ₽', isRead: false, link: '/cashflow' },
+        { userId: users.sidorov.id, type: 'project_deadline', title: 'Срок проекта подходит', message: 'Проект "Офисная мебель" — до завершения менее 2 недель', isRead: true },
+        { userId: users.petrova.id, type: 'system', title: 'Импорт завершён', message: 'Успешно импортировано 5 документов из 1С:Клиент-Банк', isRead: true },
+        { userId: users.ivanov.id, type: 'budget_overrun', title: 'Бюджет на фурнитуру', message: 'Расходы по категории "Фурнитура" проекта "Гостиничный номерной фонд" близки к лимиту', isRead: false },
+        { userId: users.sidorov.id, type: 'sync_error', title: 'Ошибка синхронизации', message: 'Не удалось подключиться к ZakupPro API. Проверьте ключ доступа.', isRead: false },
+      ],
+    })).count
+
+    // --- Sync Logs ---
+    const syncLogCount = (await tx.syncLog.createMany({
+      data: [
+        { source: 'zakuppro', status: 'success', recordsTotal: 5, recordsSynced: 5, startedAt: new Date('2026-05-01T10:00:00'), completedAt: new Date('2026-05-01T10:00:03') },
+        { source: '1c_clientbank', status: 'partial', recordsTotal: 8, recordsSynced: 6, errors: JSON.stringify(['Invalid date for document 123', 'Duplicate document 456']), startedAt: new Date('2026-05-02T14:30:00'), completedAt: new Date('2026-05-02T14:30:02') },
+      ],
+    })).count
+
+    // ─── Stage 3 Seed Data ──────────────────────────────────────────
+
+    // --- Classification Rules (5-6 rules matching furniture keywords) ---
+    const ruleCount = (await tx.classificationRule.createMany({
+      data: [
+        {
+          keyword: 'дсп',
+          categoryId: catDSP.id,
+          counterpartyKeyword: 'лесторг',
+          projectId: null,
+          priority: 10,
+          isActive: true,
+        },
+        {
+          keyword: 'мдф',
+          categoryId: catDSP.id,
+          counterpartyKeyword: 'лесторг',
+          projectId: null,
+          priority: 10,
+          isActive: true,
+        },
+        {
+          keyword: 'фурнитур',
+          categoryId: catFurniture.id,
+          counterpartyKeyword: 'метиз',
+          projectId: null,
+          priority: 9,
+          isActive: true,
+        },
+        {
+          keyword: 'ткань',
+          categoryId: catFabric.id,
+          counterpartyKeyword: 'текстиль',
+          projectId: null,
+          priority: 8,
+          isActive: true,
+        },
+        {
+          keyword: 'поролон',
+          categoryId: catPorolon.id,
+          counterpartyKeyword: 'текстиль',
+          projectId: null,
+          priority: 8,
+          isActive: true,
+        },
+        {
+          keyword: 'аренд',
+          categoryId: catRent.id,
+          projectId: null,
+          priority: 5,
+          isActive: true,
+        },
+      ],
+    })).count
+
+    // --- Import Config ---
+    const importConfig = await tx.importConfig.create({
+      data: {
+        source: '1c_clientbank',
+        watchPath: '/data/1c-imports',
+        autoImport: false,
+        autoClassify: true,
+        lastImportAt: new Date('2026-05-02T14:30:00'),
+      },
+    })
+
+    // --- ZakupPro Import Config ---
+    const importConfig2 = await tx.importConfig.create({
+      data: {
+        source: 'zakuppro',
+        watchPath: null,
+        autoImport: false,
+        autoClassify: false,
+        lastImportAt: new Date('2026-05-01T10:00:00'),
+      },
+    })
+
     return {
       userCount: 4,
       clientCount: 5,
       counterpartyCount: 6,
-      categoryCount: 12, // 2 income + 10 expense (1 parent + 4 children + 5 standalone)
+      categoryCount: 12,
       projectCount: 5,
       transactionCount: transactions.count,
+      budgetCount,
+      cashflowCount,
+      notificationCount,
+      syncLogCount,
+      classificationRuleCount: ruleCount,
+      importConfigCount: 2,
     }
   })
 
   // ─── Summary ────────────────────────────────────────────────────────
   console.log('🎉 Seeding complete!\n')
   console.log('📊 Records created:')
-  console.log(`   Users:         ${result.userCount}`)
-  console.log(`   Clients:       ${result.clientCount}`)
-  console.log(`   Counterparties:${result.counterpartyCount}`)
-  console.log(`   Categories:    ${result.categoryCount}`)
-  console.log(`   Projects:      ${result.projectCount}`)
-  console.log(`   Transactions:  ${result.transactionCount}`)
+  console.log(`   Users:               ${result.userCount}`)
+  console.log(`   Clients:             ${result.clientCount}`)
+  console.log(`   Counterparties:      ${result.counterpartyCount}`)
+  console.log(`   Categories:          ${result.categoryCount}`)
+  console.log(`   Projects:            ${result.projectCount}`)
+  console.log(`   Transactions:        ${result.transactionCount}`)
+  console.log(`   Budgets:             ${result.budgetCount}`)
+  console.log(`   CashFlow Payments:   ${result.cashflowCount}`)
+  console.log(`   Notifications:       ${result.notificationCount}`)
+  console.log(`   Sync Logs:           ${result.syncLogCount}`)
+  console.log(`   Classification Rules:${result.classificationRuleCount}`)
+  console.log(`   Import Configs:      ${result.importConfigCount}`)
   console.log()
 
   // ─── Verification ───────────────────────────────────────────────────
@@ -715,15 +884,29 @@ async function main() {
     projects: await db.project.count(),
     transactions: await db.transaction.count(),
     auditLogs: await db.auditLog.count(),
+    budgets: await db.budget.count(),
+    cashflow: await db.cashFlowPayment.count(),
+    notifications: await db.notification.count(),
+    syncLogs: await db.syncLog.count(),
+    classificationRules: await db.classificationRule.count(),
+    periodCloses: await db.periodClose.count(),
+    importConfigs: await db.importConfig.count(),
   }
   console.log('🔍 Verification (actual DB counts):')
-  console.log(`   Users:         ${counts.users}`)
-  console.log(`   Clients:       ${counts.clients}`)
-  console.log(`   Counterparties:${counts.counterparties}`)
-  console.log(`   Categories:    ${counts.categories}`)
-  console.log(`   Projects:      ${counts.projects}`)
-  console.log(`   Transactions:  ${counts.transactions}`)
-  console.log(`   AuditLogs:     ${counts.auditLogs}`)
+  console.log(`   Users:               ${counts.users}`)
+  console.log(`   Clients:             ${counts.clients}`)
+  console.log(`   Counterparties:      ${counts.counterparties}`)
+  console.log(`   Categories:          ${counts.categories}`)
+  console.log(`   Projects:            ${counts.projects}`)
+  console.log(`   Transactions:        ${counts.transactions}`)
+  console.log(`   AuditLogs:           ${counts.auditLogs}`)
+  console.log(`   Budgets:             ${counts.budgets}`)
+  console.log(`   CashFlow:            ${counts.cashflow}`)
+  console.log(`   Notifications:       ${counts.notifications}`)
+  console.log(`   SyncLogs:            ${counts.syncLogs}`)
+  console.log(`   ClassificationRules: ${counts.classificationRules}`)
+  console.log(`   PeriodCloses:        ${counts.periodCloses}`)
+  console.log(`   ImportConfigs:       ${counts.importConfigs}`)
 }
 
 main()

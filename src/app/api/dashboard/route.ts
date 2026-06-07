@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
 
 export async function GET() {
   try {
+    // Auth check
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
+    }
+
     // Calculate current month boundaries
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -48,7 +56,6 @@ export async function GET() {
     });
 
     // Project profitability ranking (top 5)
-    // Get all active projects with their transactions
     const projects = await db.project.findMany({
       where: { status: 'active' },
       include: {
@@ -82,6 +89,34 @@ export async function GET() {
       .sort((a, b) => b.profit - a.profit)
       .slice(0, 5);
 
+    // Margin summary data
+    const marginTarget = 0.25;
+    const marginSummary = {
+      total: projects.length,
+      on_target: 0,
+      at_risk: 0,
+      below_target: 0,
+    };
+
+    for (const project of projects) {
+      const revenue = project.transactions
+        .filter((t) => t.type === 'income')
+        .reduce((sum, t) => sum + t.amount, 0);
+      const expenses = project.transactions
+        .filter((t) => t.type === 'expense')
+        .reduce((sum, t) => sum + t.amount, 0);
+      const currentMargin = revenue > 0 ? (revenue - expenses) / revenue : 0;
+      const target = project.marginTarget ?? marginTarget;
+
+      if (currentMargin >= target) {
+        marginSummary.on_target++;
+      } else if (currentMargin >= target * 0.7) {
+        marginSummary.at_risk++;
+      } else {
+        marginSummary.below_target++;
+      }
+    }
+
     const totalRevenue = revenueResult._sum.amount || 0;
     const totalExpenses = expenseResult._sum.amount || 0;
 
@@ -93,6 +128,7 @@ export async function GET() {
       recentTransactions,
       pendingClassificationCount,
       projectProfitability,
+      marginSummary,
     });
   } catch (error) {
     console.error('GET /dashboard error:', error);
