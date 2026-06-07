@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 import crypto from "crypto"
 import { db } from "@/lib/db"
+import { generateCsrfToken } from "@/lib/csrf"
 
 export const roleLabels: Record<string, string> = {
   owner: "Собственник",
@@ -106,12 +107,16 @@ export const authOptions: NextAuthOptions = {
         // Create a refresh token on successful login
         const refreshToken = await createRefreshToken(user.id)
 
+        // Generate CSRF token for custom API protection
+        const csrfToken = generateCsrfToken()
+
         return {
           id: user.id,
           email: user.email,
           name: user.name,
           role: user.role,
           refreshToken,
+          csrfToken,
         }
       },
     }),
@@ -126,6 +131,43 @@ export const authOptions: NextAuthOptions = {
   jwt: {
     maxAge: JWT_MAX_AGE,
   },
+  // Ensure cookies use SameSite=Lax for CSRF protection
+  // Use __Secure- and __Host- prefixes only in production (requires HTTPS)
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === "production"
+        ? `__Secure-next-auth.session-token`
+        : `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    callbackUrl: {
+      name: process.env.NODE_ENV === "production"
+        ? `__Host-next-auth.callback-url`
+        : `next-auth.callback-url`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    csrfToken: {
+      name: process.env.NODE_ENV === "production"
+        ? `__Host-next-auth.csrf-token`
+        : `next-auth.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+  },
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
     async jwt({ token, user }) {
@@ -134,6 +176,7 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id
         token.role = (user as { role: string }).role
         token.refreshToken = (user as { refreshToken: string }).refreshToken
+        token.csrfToken = (user as { csrfToken: string }).csrfToken
 
         // Clean up expired refresh tokens for this user
         await cleanExpiredRefreshTokens(user.id)

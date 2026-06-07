@@ -386,3 +386,75 @@ Stage Summary:
   6. Structured logger (JSON in prod, colored in dev, context support)
   7. Auth added to previously unprotected GET endpoints (import-config, periods)
 
+
+---
+Task ID: 5-backend
+Agent: backend
+Task: Stage 5 — Security Hardening, Database Backups, PostgreSQL Migration, Production Config
+
+Work Log:
+- Created CSRF protection library (src/lib/csrf.ts):
+  - generateCsrfToken() using crypto.randomUUID
+  - validateCsrfToken() with timing-safe comparison (crypto.timingSafeEqual)
+  - shouldSkipCsrf() and requiresCsrfValidation() helpers
+  - Not enforced in middleware per task notes — SameSite=Lax cookies provide baseline CSRF protection
+- Updated auth config (src/lib/auth.ts):
+  - Added SameSite=Lax cookie configuration for all NextAuth cookies
+  - Environment-conditional cookie names (__Secure-/__Host- prefixes only in production HTTPS)
+  - csrfToken generated on login and stored in JWT for future use
+- Updated NextAuth route (src/app/api/auth/[...nextauth]/route.ts):
+  - Sets csrf-token cookie on successful credentials sign-in (for double-submit pattern)
+- Created input sanitization library (src/lib/sanitize.ts):
+  - sanitizeString(): strips HTML tags, normalizes unicode (NFC), trims whitespace, removes script handlers
+  - sanitizeNumber(): ensures finite number, rounds to 2 decimal places
+  - sanitizeDate(): validates YYYY-MM-DD/ISO 8601, sanity checks (2000-2100)
+  - sanitizeUrl(): only allows http/https and relative URLs
+  - sanitizeEnum(): whitelist-based enum validation
+- Updated transactions API (src/app/api/transactions/route.ts):
+  - POST: sanitizes description, externalId (sanitizeString), amount (sanitizeNumber), date (sanitizeDate)
+- Updated projects API (src/app/api/projects/route.ts):
+  - POST: sanitizes name, externalId (sanitizeString), startDate/endDate (sanitizeDate), contractAmount (sanitizeNumber)
+- Updated middleware (src/middleware.ts):
+  - Security headers on ALL responses: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy, Content-Security-Policy
+  - Cache-Control: no-store for all API routes
+  - Rate limiting preserved (API routes only, skips auth/cron)
+  - Matcher updated to cover all routes (not just /api/*)
+- Created database backup API (src/app/api/backup/route.ts):
+  - POST: owner-only, detects SQLite vs PostgreSQL by DATABASE_URL, returns .db file or pg_dump output
+  - GET: owner-only, returns backup capability info
+  - Logs backup action in AuditLog
+- Created backup scripts:
+  - scripts/backup.sh: auto-detects DB type, timestamped gzip backup, keeps last 30
+  - scripts/restore.sh: interactive restore with confirmation prompt
+- Created PostgreSQL migration files:
+  - prisma/schema.postgresql.prisma: complete schema with provider = "postgresql" (all 14 models)
+  - scripts/migrate-to-pg.sh: 5-step migration script (switch schema → set URL → migrate → generate → seed)
+- Updated next.config.ts:
+  - poweredByHeader: false (removes X-Powered-By)
+  - reactStrictMode: true
+  - Security headers via headers() config
+- Updated Dockerfile:
+  - Added postgresql16-client for pg_dump backups
+  - Added font-dejavu-sans for pdfkit Cyrillic support
+  - Copy backup scripts, pdfkit data, system fonts
+  - HEALTHCHECK instruction (wget /api/health every 30s)
+- Updated docker-compose.yml:
+  - Added backups volume and BACKUP_PATH environment variable
+  - Added healthcheck for app container
+  - Caddy depends_on app with condition: service_healthy
+- Created .env.production.example: complete template with PostgreSQL, NextAuth, API keys, backup, logging
+- Updated Caddyfile: production config with security headers (HSTS, -Server), gzip, static caching, API no-store
+- Build passes: 42 API routes, lint clean
+
+Stage Summary:
+- Security headers on ALL responses (6 headers + CSP)
+- SameSite=Lax cookies for CSRF protection (environment-conditional naming)
+- Input sanitization on transaction and project creation
+- Database backup API (SQLite file copy / PostgreSQL pg_dump)
+- Backup and restore shell scripts (auto-cleanup, keeps 30)
+- PostgreSQL schema and migration script ready
+- Production Next.js config (no X-Powered-By, strict mode, standalone)
+- Production Dockerfile (pg_dump, fonts, healthcheck)
+- Production docker-compose (backup volume, healthcheck, Caddy health dependency)
+- Production Caddyfile (HSTS, gzip, static caching, security headers)
+- .env.production.example template

@@ -1,0 +1,236 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      String   @default("manager") // owner | accountant | manager | storekeeper
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects       Project[]       @relation("ProjectManager")
+  transactions   Transaction[]   @relation("TransactionCreator")
+  auditLogs      AuditLog[]
+  refreshTokens  RefreshToken[]
+  notifications  Notification[]
+  periodCloses   PeriodClose[]
+}
+
+model Client {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  inn       String?
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
+}
+
+model Counterparty {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  inn       String?
+  type      String?  // supplier | customer | other
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions     Transaction[]
+  cashFlowPayments CashFlowPayment[]
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  type      String   // income | expense
+  parentId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent       Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children     Category[]  @relation("CategoryHierarchy")
+  transactions Transaction[]
+  budgets      Budget[]
+  classificationRules ClassificationRule[]
+}
+
+model Project {
+  id              String    @id @default(uuid())
+  externalId      String    @unique // ПМ000010
+  name            String
+  clientId        String?
+  status          String    @default("lead") // lead | active | completed | cancelled
+  contractAmount  Float?
+  startDate       DateTime?
+  endDate         DateTime?
+  marginTarget    Float?    @default(0.25) // Target margin (25% default)
+  completedAt     DateTime?               // When project was actually completed
+  qualityRating   String?                 // good | acceptable | poor
+  deadlineStatus  String?    @default("on_track") // on_track | at_risk | overdue
+  managerId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  client       Client?       @relation(fields: [clientId], references: [id])
+  manager      User?         @relation("ProjectManager", fields: [managerId], references: [id])
+  transactions       Transaction[]
+  budgets            Budget[]
+  classificationRules ClassificationRule[]
+}
+
+model Transaction {
+  id                    String      @id @default(uuid())
+  projectId             String?
+  categoryId            String
+  counterpartyId        String?
+  createdBy             String
+  date                  DateTime
+  amount                Float
+  type                  String      // income | expense
+  description           String?
+  documentUrl           String?
+  source                String      @default("manual") // manual | 1c_clientbank | zakuppro
+  externalId            String?     // Номер документа для дедупликации
+  requiresClassification Boolean    @default(false)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  project      Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  category     Category      @relation(fields: [categoryId], references: [id])
+  counterparty Counterparty? @relation(fields: [counterpartyId], references: [id])
+  creator      User          @relation("TransactionCreator", fields: [createdBy], references: [id])
+  auditLogs    AuditLog[]
+
+  @@unique([externalId, source, date])
+}
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  entityType    String   // transaction | project | category | budget | user
+  entityId      String
+  action        String   // create | update | delete | import | sync
+  changes       String?  // JSON string
+  transactionId String?
+  userId        String
+  createdAt     DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==================== Stage 2 Models ====================
+
+model Budget {
+  id          String   @id @default(uuid())
+  projectId   String
+  categoryId  String
+  amount      Float    // Плановая сумма
+  period      String   // 2026-01, 2026-Q1, 2026 и т.д.
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([projectId, categoryId, period])
+}
+
+model CashFlowPayment {
+  id             String   @id @default(uuid())
+  date           DateTime
+  amount         Float
+  type           String   // inflow | outflow | planned_inflow | planned_outflow
+  counterpartyId String?
+  projectId      String?
+  description    String?
+  status         String   @default("planned") // planned | confirmed | cancelled
+  dueDate        DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  counterparty Counterparty? @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // budget_overrun | project_deadline | sync_error | cash_gap | system
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?  // URL для перехода
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SyncLog {
+  id           String   @id @default(uuid())
+  source       String   // zakuppro | 1c_clientbank | csv
+  status       String   // success | partial | failed
+  recordsTotal Int      @default(0)
+  recordsSynced Int     @default(0)
+  errors       String?  // JSON array of errors
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+}
+
+// ==================== Stage 3 Models ====================
+
+model ClassificationRule {
+  id                   String   @id @default(uuid())
+  keyword              String                    // Keyword to match in description
+  categoryId           String                    // Category to assign
+  counterpartyKeyword  String?                   // Optional: match counterparty name
+  projectId            String?                   // Optional: assign to project
+  priority             Int      @default(0)      // Higher = checked first
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id])
+  project  Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+}
+
+model PeriodClose {
+  id         String   @id @default(uuid())
+  period     String   @unique  // "2026-01", "2026-Q1", etc.
+  closedBy   String
+  closedAt   DateTime @default(now())
+  note       String?
+  isReopened Boolean  @default(false)
+
+  user User @relation(fields: [closedBy], references: [id])
+}
+
+model ImportConfig {
+  id              String   @id @default(uuid())
+  source          String   @unique  // "1c_clientbank" | "zakuppro"
+  watchPath       String?            // Path for file watcher
+  autoImport      Boolean  @default(false)
+  autoClassify    Boolean  @default(true)
+  lastImportAt    DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

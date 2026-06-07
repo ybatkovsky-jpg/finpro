@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
+import { sanitizeString, sanitizeNumber, sanitizeDate } from '@/lib/sanitize';
 
 const VALID_STATUSES = ['lead', 'active', 'completed', 'cancelled'];
 const EXTERNAL_ID_PATTERN = /^ПМ\d{6}$/;
@@ -92,22 +93,26 @@ export async function POST(request: NextRequest) {
       qualityRating,
     } = body;
 
+    // Sanitize string inputs
+    const sanitizedExternalId = sanitizeString(externalId);
+    const sanitizedName = sanitizeString(name);
+
     // Validation
-    if (!externalId) {
+    if (!sanitizedExternalId) {
       return NextResponse.json(
         { error: 'externalId is required' },
         { status: 422 }
       );
     }
 
-    if (!EXTERNAL_ID_PATTERN.test(externalId)) {
+    if (!EXTERNAL_ID_PATTERN.test(sanitizedExternalId)) {
       return NextResponse.json(
         { error: 'externalId must match pattern ПМ###### (e.g., ПМ000001)' },
         { status: 422 }
       );
     }
 
-    if (!name) {
+    if (!sanitizedName) {
       return NextResponse.json(
         { error: 'name is required' },
         { status: 422 }
@@ -121,8 +126,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Sanitize and validate dates
+    const sanitizedStartDate = startDate ? sanitizeDate(startDate) : null;
+    const sanitizedEndDate = endDate ? sanitizeDate(endDate) : null;
+
+    // Sanitize contract amount
+    const sanitizedContractAmount = contractAmount != null ? sanitizeNumber(contractAmount) : null;
+
     // Check for duplicate externalId
-    const existing = await db.project.findUnique({ where: { externalId } });
+    const existing = await db.project.findUnique({ where: { externalId: sanitizedExternalId } });
     if (existing) {
       return NextResponse.json(
         { error: 'Project with this externalId already exists' },
@@ -132,13 +144,13 @@ export async function POST(request: NextRequest) {
 
     const project = await db.project.create({
       data: {
-        externalId,
-        name,
+        externalId: sanitizedExternalId,
+        name: sanitizedName,
         clientId: clientId || null,
         status,
-        contractAmount: contractAmount ?? null,
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null,
+        contractAmount: sanitizedContractAmount,
+        startDate: sanitizedStartDate,
+        endDate: sanitizedEndDate,
         managerId: managerId || null,
         marginTarget: marginTarget ?? 0.25,
         qualityRating: qualityRating || null,

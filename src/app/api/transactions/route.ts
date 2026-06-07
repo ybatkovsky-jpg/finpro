@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 import { checkPeriodClosed } from '@/lib/period-guard';
 import { logger } from '@/lib/logger';
+import { sanitizeString, sanitizeNumber, sanitizeDate } from '@/lib/sanitize';
 
 export async function GET(request: NextRequest) {
   try {
@@ -101,7 +102,12 @@ export async function POST(request: NextRequest) {
       requiresClassification = false,
     } = body;
 
-    // Validation: amount must be a positive number (0 or negative → 422 Unprocessable Entity)
+    // Sanitize string inputs
+    const sanitizedDescription = description ? sanitizeString(description) : null;
+    const sanitizedExternalId = externalId ? sanitizeString(externalId) : null;
+
+    // Validate and sanitize amount
+    const sanitizedAmount = sanitizeNumber(amount);
     if (typeof amount !== 'number' || isNaN(amount) || amount <= 0) {
       return NextResponse.json(
         { error: 'Amount must be greater than 0' },
@@ -130,7 +136,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const transactionDate = new Date(date);
+    // Validate and sanitize date
+    const transactionDate = sanitizeDate(date);
+    if (!transactionDate) {
+      return NextResponse.json(
+        { error: 'Invalid date format. Use YYYY-MM-DD or ISO 8601 format.' },
+        { status: 422 }
+      );
+    }
 
     // Check if the transaction date falls in a closed period
     const periodCheck = await checkPeriodClosed(transactionDate);
@@ -152,12 +165,12 @@ export async function POST(request: NextRequest) {
         counterpartyId: counterpartyId || null,
         createdBy: user.id,
         date: transactionDate,
-        amount,
+        amount: sanitizedAmount,
         type,
-        description: description || null,
+        description: sanitizedDescription,
         documentUrl: documentUrl || null,
         source,
-        externalId: externalId || null,
+        externalId: sanitizedExternalId,
         requiresClassification,
       },
       include: {
@@ -173,7 +186,7 @@ export async function POST(request: NextRequest) {
         entityType: 'transaction',
         entityId: transaction.id,
         action: 'create',
-        changes: JSON.stringify({ amount, type, date, categoryId, projectId }),
+        changes: JSON.stringify({ amount: sanitizedAmount, type, date: transactionDate.toISOString(), categoryId, projectId }),
         userId: user.id,
         transactionId: transaction.id,
       },

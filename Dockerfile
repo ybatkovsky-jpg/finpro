@@ -37,6 +37,9 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app
 
+# Install runtime dependencies: postgresql-client for pg_dump backups
+RUN apk add --no-cache postgresql16-client font-dejavu-sans
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
@@ -58,8 +61,18 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# Create upload directory
-RUN mkdir -p /app/upload && chown nextjs:nodejs /app/upload
+# Copy backup scripts
+COPY --from=builder /app/scripts ./scripts
+
+# Copy font files for pdfkit (DejaVu Sans for Cyrillic support)
+COPY --from=builder /app/node_modules/pdfkit/js/data ./node_modules/pdfkit/js/data
+# System fonts for pdfkit fallback
+RUN mkdir -p /app/fonts && \
+    cp /usr/share/fonts/ttf/dejavu/DejaVuSans*.ttf /app/fonts/ 2>/dev/null || true
+
+# Create directories
+RUN mkdir -p /app/upload /app/backups /app/1c-import && \
+    chown -R nextjs:nodejs /app/upload /app/backups /app/1c-import /app/fonts
 
 USER nextjs
 
@@ -67,5 +80,9 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 CMD ["node", "server.js"]

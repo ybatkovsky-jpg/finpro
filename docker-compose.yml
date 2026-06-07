@@ -40,12 +40,20 @@ services:
       ZAKUPPRO_API_KEY: ${ZAKUPPRO_API_KEY}
       ZAKUPPRO_API_URL: ${ZAKUPPRO_API_URL:-https://zakuppro.ru/api/v1}
       NODE_ENV: production
+      BACKUP_PATH: /app/backups
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - uploads:/app/upload
       - 1c_import:/app/1c-import
+      - backups:/app/backups
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # Caddy Reverse Proxy
   caddy:
@@ -59,7 +67,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - app
+      app:
+        condition: service_healthy
 
 volumes:
   pgdata:
@@ -67,6 +76,8 @@ volumes:
   uploads:
     driver: local
   1c_import:
+    driver: local
+  backups:
     driver: local
   caddy_data:
     driver: local
