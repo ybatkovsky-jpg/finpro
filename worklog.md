@@ -227,3 +227,33 @@ Stage Summary:
 - Margin tracking with color-coded status (green/amber/red), progress bars, and trend indicators
 - Classification rules with priority-based matching and active/inactive toggle
 - Period closing with reopen capability (owner-only) and audit trail
+
+---
+Task ID: 4
+Agent: main
+Task: Docker containerization and PostgreSQL migration preparation
+
+Work Log:
+- Created Dockerfile: multi-stage build (deps → builder → runner) with Node 20 Alpine
+  - Standalone Next.js output, Prisma client bundled, upload directory created
+- Created docker-compose.yml: production stack
+  - PostgreSQL 16 Alpine with health check
+  - Next.js app container with env vars, depends_on PostgreSQL
+  - Caddy 2 reverse proxy with HTTP/HTTPS
+  - Named volumes: pgdata, uploads, 1c_import, caddy_data, caddy_config
+- Created docker-compose.dev.yml: development PostgreSQL only
+- Updated Caddyfile: reverse proxy config with security headers template
+- Created .env.docker: production environment template
+- Updated package.json: added scripts
+  - db:migrate:prod, db:switch-pg, db:switch-sqlite
+  - docker:dev, docker:up, docker:down
+- Saved schema.sqlite.prisma as backup for SQLite provider
+- Updated .gitignore: db files, Docker env files, schema backups, uploads
+- Build verified: 40 API routes, 16 views, all clean
+- Committed and pushed to GitHub (commit b5102e7)
+
+Stage Summary:
+- Docker infrastructure ready for Timeweb Cloud deployment
+- PostgreSQL migration path: db:switch-pg script + docker-compose.yml
+- Production Caddy reverse proxy with HTTPS support
+- All Stage 3 features (margin, classification, periods, 1C import, Docker) pushed to GitHub
