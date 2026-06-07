@@ -38,7 +38,7 @@ FROM base AS runner
 WORKDIR /app
 
 # Install runtime dependencies: postgresql-client for pg_dump backups
-RUN apk add --no-cache postgresql16-client font-dejavu-sans
+RUN echo "http://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories && apk add --no-cache postgresql16-client font-dejavu
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -61,6 +61,9 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
+# Copy bcryptjs (not included in standalone trace)
+COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
+
 # Copy backup scripts
 COPY --from=builder /app/scripts ./scripts
 
@@ -68,7 +71,7 @@ COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/node_modules/pdfkit/js/data ./node_modules/pdfkit/js/data
 # System fonts for pdfkit fallback
 RUN mkdir -p /app/fonts && \
-    cp /usr/share/fonts/ttf/dejavu/DejaVuSans*.ttf /app/fonts/ 2>/dev/null || true
+    cp /usr/share/fonts/dejavu/DejaVuSans*.ttf /app/fonts/ 2>/dev/null || true
 
 # Create directories
 RUN mkdir -p /app/upload /app/backups /app/1c-import && \
