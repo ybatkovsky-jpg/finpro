@@ -257,3 +257,132 @@ Stage Summary:
 - PostgreSQL migration path: db:switch-pg script + docker-compose.yml
 - Production Caddy reverse proxy with HTTPS support
 - All Stage 3 features (margin, classification, periods, 1C import, Docker) pushed to GitHub
+
+---
+Task ID: 4-frontend
+Agent: frontend
+Task: Implement Stage 4 Frontend — Global Search (Cmd+K), Keyboard Shortcuts, Mobile Responsive
+
+Work Log:
+- Created /api/search/route.ts: global search API endpoint
+  - GET handler with `q` query parameter, requires authentication (getServerSession)
+  - Searches across projects (name, externalId), counterparties (name), categories (name), transactions (description), users (name, email)
+  - Returns results grouped by type with 5 results per group
+- Created /src/components/search/command-palette.tsx: global search command palette
+  - Opens with Ctrl+K / Cmd+K keyboard shortcut
+  - Uses shadcn/ui CommandDialog (cmdk library) for the palette UI
+  - Searches across all entity types with debounced API calls (300ms)
+  - Shows recent searches from localStorage (key: "finpro-recent-searches", max 10 items)
+  - Quick navigation when no query entered (Dashboard, Transactions, Projects, Reports, Margin)
+  - Keyboard navigation (arrow up/down, Enter to select, Escape to close)
+  - Footer with navigation hints (↑↓ навигация, ↵ выбрать, esc закрыть, ⌘K поиск)
+- Created /src/components/keyboard-shortcuts.tsx: global keyboard shortcuts
+  - 1/D — Dashboard, 2/T — Transactions, 3/P — Projects, 4/R — Reports, 5/M — Margin
+  - ⌘K — Search (handled by CommandPalette)
+  - ? — Show keyboard shortcuts help dialog
+  - Only triggers when not in input/textarea/select/contentEditable elements
+  - Help dialog with styled kbd elements showing all shortcuts
+- Updated /src/components/layout/app-layout.tsx:
+  - Imported and rendered CommandPalette and KeyboardShortcuts
+  - Added Search button in header with ⌘K hint (hidden on mobile, replaced with icon-only)
+  - Mobile: search icon button visible only on small screens
+- Updated /src/components/views/dashboard-view.tsx:
+  - KPI cards: grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 (was sm:grid-cols-2 lg:grid-cols-5)
+  - Recent transactions: overflow-x-auto wrapper, hidden Category on <sm, hidden Description on <md
+- Updated /src/components/views/margin-view.tsx:
+  - Summary cards: grid-cols-2 sm:grid-cols-4 (was sm:grid-cols-2 lg:grid-cols-4)
+  - Margin table: added min-w-[700px] for horizontal scroll
+  - Alerts: flex-col sm:flex-row for mobile stacking
+- Updated /src/components/views/transactions-view.tsx:
+  - Header: flex-col sm:flex-row for mobile stacking
+  - Create button: w-full sm:w-auto
+  - Filter grid: grid-cols-1 sm:grid-cols-2 lg:grid-cols-5
+  - Table: overflow-x-auto with min-w-[600px]
+- Updated /src/components/views/projects-view.tsx:
+  - Project cards: grid-cols-1 sm:grid-cols-2 lg:grid-cols-3
+  - Project detail transactions: overflow-x-auto with min-w-[500px]
+- Updated /src/components/views/cashflow-view.tsx:
+  - Summary cards: grid-cols-2 lg:grid-cols-4
+  - Payments table: overflow-x-auto with min-w-[700px]
+- Updated /src/components/views/budgets-view.tsx:
+  - Budgets table: overflow-x-auto with min-w-[700px]
+- Updated /src/components/views/reports-view.tsx:
+  - Added PDF export button (FileText icon) next to existing Excel and CSV exports for both Project P&L and Business P&L tabs
+  - PDF export calls /api/reports/pnl/project/{id}/export?format=pdf and /api/reports/pnl/business/export?format=pdf
+- Updated /src/components/layout/sidebar.tsx:
+  - Nav items: py-3 min-h-[44px] (was py-2.5) for mobile touch targets >= 44px
+- Lint passes clean
+- App loads correctly in browser
+
+Stage Summary:
+- Global Search Command Palette (Cmd+K): searches across projects, counterparties, categories, transactions, users
+- Keyboard Shortcuts: 1-5/D/T/P/R/M for navigation, ? for help, ⌘K for search
+- Mobile Responsive: all views updated with proper grid breakpoints, overflow-x-auto tables, hidden columns on small screens
+- PDF Export: added to both Project P&L and Business P&L reports
+- Sidebar: improved touch targets for mobile (44px minimum)
+
+---
+Task ID: 4-backend
+Agent: backend
+Task: Implement Stage 4 Backend — PDF Reports, Auto-sync ZakupPro, Rate Limiting, Health Check, Structured Logging
+
+Work Log:
+- Installed pdfkit and @types/pdfkit dependencies
+- Added serverExternalPackages: ["pdfkit"] to next.config.ts to fix pdfkit font path resolution in Next.js runtime
+- Created structured logger (src/lib/logger.ts):
+  - Levels: debug, info, warn, error with priority filtering
+  - Production: JSON format; Development: human-readable with colors
+  - Context object support; LOG_LEVEL env var support
+- Created rate limiter (src/lib/rate-limit.ts):
+  - In-memory per-IP rate limiting using Map
+  - Default: 100 requests per 60 seconds per IP
+  - X-Forwarded-For / X-Real-IP header support
+  - Automatic cleanup of stale entries every 5 minutes
+- Created middleware (src/middleware.ts):
+  - Applies rate limiting to all /api/* routes
+  - Skips /api/auth/* and /api/cron/* routes
+  - Returns 429 with JSON error when rate limit exceeded
+  - Adds X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset headers
+- Created health check API (src/app/api/health/route.ts):
+  - GET handler, no auth required
+  - Returns: status (ok/degraded), timestamp, database check, version, uptime, memory, environment
+- Created cron sync API (src/app/api/cron/sync/route.ts):
+  - POST handler triggers ZakupPro sync
+  - Protected by X-API-Key auth
+  - Logs to SyncLog
+  - Returns sync results with triggeredBy: 'cron'
+- Created cron 1c-watch API (src/app/api/cron/1c-watch/route.ts):
+  - POST handler scans configured watch directory for new 1C .txt files
+  - Protected by X-API-Key auth
+  - Dual encoding support (Win-1251 / UTF-8)
+  - Imports transactions with auto-classification
+  - Updates ImportConfig.lastImportAt and creates SyncLog
+- Added PDF export to project P&L route (format=pdf):
+  - Uses pdfkit with DejaVu Sans font for Cyrillic support
+  - Company header: "ООО ПРО Мебель"
+  - Report title, project name/externalId, period
+  - Revenue line, COGS breakdown with categories/subcategories
+  - Total COGS, Gross Profit, Gross Margin %
+  - Russian number formatting (space as thousands separator)
+  - "Сформирован:" timestamp
+- Added PDF export to business P&L route (format=pdf):
+  - Full P&L table: Выручка, COGS, Валовая прибыль, Операционные расходы, EBIT, УСН 15%, Чистая прибыль
+  - Project breakdown table: Код, Проект, Выручка, Себестоимость, Прибыль, Маржа
+  - Totals row and "Сформирован:" timestamp
+- Updated all API routes to use structured logger instead of console.log/console.error:
+  - margin, dashboard, transactions, 1c-clientbank, import-config, 1c-auto, classification-rules, periods, sync/zakuppro
+- Added auth to API routes that were missing it:
+  - import-config GET — added getServerSession check
+  - periods GET — added getServerSession check
+- Lint passes clean, all endpoints tested and working
+
+Stage Summary:
+- 7 new features implemented:
+  1. PDF P&L reports for both project and business (pdfkit with DejaVu Sans Cyrillic font)
+  2. Cron API for ZakupPro auto-sync (X-API-Key protected)
+  3. Cron API for 1C watch directory auto-import (X-API-Key protected)
+  4. In-memory rate limiting middleware (100 req/60s per IP, skips auth/cron)
+  5. Health check API (database status, version, uptime, memory)
+  6. Structured logger (JSON in prod, colored in dev, context support)
+  7. Auth added to previously unprotected GET endpoints (import-config, periods)
+

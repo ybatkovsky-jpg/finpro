@@ -196,7 +196,7 @@ export function DashboardView() {
   return (
     <div className="space-y-6">
       {/* KPI Cards — enhanced with trends */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
         <Card className="border-l-4 border-l-emerald-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -593,7 +593,7 @@ export function DashboardView() {
           <CardDescription>10 последних операций</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="max-h-96 overflow-y-auto">
+          <div className="max-h-96 overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -601,8 +601,8 @@ export function DashboardView() {
                   <TableHead>Тип</TableHead>
                   <TableHead className="text-right">Сумма</TableHead>
                   <TableHead>Проект</TableHead>
-                  <TableHead>Категория</TableHead>
-                  <TableHead>Описание</TableHead>
+                  <TableHead className="hidden sm:table-cell">Категория</TableHead>
+                  <TableHead className="hidden md:table-cell">Описание</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -634,8 +634,8 @@ export function DashboardView() {
                       <TableCell className="text-sm">
                         {t.project ? t.project.name : '—'}
                       </TableCell>
-                      <TableCell className="text-sm">{t.category.name}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-48 truncate">
+                      <TableCell className="text-sm hidden sm:table-cell">{t.category.name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-48 truncate hidden md:table-cell">
                         {t.description || '—'}
                       </TableCell>
                     </TableRow>

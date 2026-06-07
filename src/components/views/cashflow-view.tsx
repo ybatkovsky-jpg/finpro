@@ -235,7 +235,7 @@ export function CashFlowView() {
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -423,19 +423,20 @@ export function CashFlowView() {
               <p className="text-sm mt-1">Нажмите &quot;Новый платёж&quot; для добавления</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Тип</TableHead>
-                  <TableHead>Дата</TableHead>
-                  <TableHead>Сумма</TableHead>
-                  <TableHead>Описание</TableHead>
-                  <TableHead>Контрагент</TableHead>
-                  <TableHead>Срок</TableHead>
-                  <TableHead>Статус</TableHead>
-                  <TableHead className="w-24">Действия</TableHead>
-                </TableRow>
-              </TableHeader>
+            <div className="overflow-x-auto">
+              <Table className="min-w-[700px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Тип</TableHead>
+                    <TableHead>Дата</TableHead>
+                    <TableHead>Сумма</TableHead>
+                    <TableHead>Описание</TableHead>
+                    <TableHead>Контрагент</TableHead>
+                    <TableHead>Срок</TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead className="w-24">Действия</TableHead>
+                  </TableRow>
+                </TableHeader>
               <TableBody>
                 {filteredPayments.map(payment => (
                   <TableRow key={payment.id} className={payment.status === 'cancelled' ? 'opacity-50' : ''}>
@@ -473,6 +474,7 @@ export function CashFlowView() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

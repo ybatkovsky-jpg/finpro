@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -165,7 +166,7 @@ export async function GET(request: NextRequest) {
       alerts,
     });
   } catch (error) {
-    console.error('GET /api/margin error:', error);
+    logger.error('GET /api/margin error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Failed to fetch margin data' },
       { status: 500 }

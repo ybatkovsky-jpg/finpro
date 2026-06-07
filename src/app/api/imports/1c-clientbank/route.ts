@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { checkPeriodClosed } from '@/lib/period-guard';
+import { logger } from '@/lib/logger';
 
 interface ParsedDocument {
   number: string;
@@ -201,7 +202,7 @@ export async function POST(request: NextRequest) {
 
     // Detect encoding and decode
     const { content, encoding } = detectAndDecode(rawBytes);
-    console.log(`1C Import: Detected encoding: ${encoding}`);
+    logger.info('1C Import: detected encoding', { encoding });
 
     const documents = parse1CClientBank(content);
 
@@ -445,7 +446,7 @@ export async function POST(request: NextRequest) {
       errors,
     });
   } catch (error) {
-    console.error('POST /imports/1c-clientbank error:', error);
+    logger.error('POST /imports/1c-clientbank error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Failed to import 1C ClientBank file' },
       { status: 500 }

@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/import-config/1c-auto
@@ -74,7 +75,7 @@ export async function POST() {
       files: files.map((f) => join(config.watchPath!, f)),
     });
   } catch (error) {
-    console.error('POST /api/import-config/1c-auto error:', error);
+    logger.error('POST /api/import-config/1c-auto error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Failed to scan watch directory' },
       { status: 500 }

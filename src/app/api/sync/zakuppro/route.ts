@@ -10,6 +10,7 @@ import {
   validateZakupProConnection,
   type ZakupProSyncResult,
 } from '@/lib/zakuppro';
+import { logger } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
   try {
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
 
           result.synced++;
         } catch (err) {
-          console.error(`Error syncing project ${zpProject.number}:`, err);
+          logger.error('Error syncing project', { externalId: zpProject.number, error: err instanceof Error ? err.message : 'Unknown error' });
           result.errors.push({
             externalId: zpProject.number || String(zpProject.id),
             error: err instanceof Error ? err.message : 'Unknown error',
@@ -184,7 +185,7 @@ export async function POST(request: NextRequest) {
       syncedAt: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('POST /sync/zakuppro error:', error);
+    logger.error('POST /sync/zakuppro error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Ошибка синхронизации с ZakupPro' },
       { status: 500 }
@@ -232,7 +233,7 @@ export async function GET(request: NextRequest) {
       apiUrl: process.env.ZAKUPPRO_API_URL || 'not configured',
     });
   } catch (error) {
-    console.error('GET /sync/zakuppro error:', error);
+    logger.error('GET /sync/zakuppro error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Ошибка проверки статуса' },
       { status: 500 }

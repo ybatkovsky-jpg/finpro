@@ -339,19 +339,20 @@ export function BudgetsView() {
               <p className="text-sm mt-1">Нажмите &quot;Новый бюджет&quot; для создания плановых расходов</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Проект</TableHead>
-                  <TableHead>Категория</TableHead>
-                  <TableHead>Период</TableHead>
-                  <TableHead className="text-right">План</TableHead>
-                  <TableHead className="text-right">Факт</TableHead>
-                  <TableHead className="text-right">Отклонение</TableHead>
-                  <TableHead className="text-center">Исполнение</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
+            <div className="overflow-x-auto">
+              <Table className="min-w-[700px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Проект</TableHead>
+                    <TableHead>Категория</TableHead>
+                    <TableHead>Период</TableHead>
+                    <TableHead className="text-right">План</TableHead>
+                    <TableHead className="text-right">Факт</TableHead>
+                    <TableHead className="text-right">Отклонение</TableHead>
+                    <TableHead className="text-center">Исполнение</TableHead>
+                    <TableHead className="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
               <TableBody>
                 {budgets.map(budget => (
                   <TableRow key={budget.id}>
@@ -393,7 +394,8 @@ export function BudgetsView() {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

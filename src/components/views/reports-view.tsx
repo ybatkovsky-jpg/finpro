@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { BarChart3, TrendingUp, TrendingDown, DollarSign, FileSpreadsheet, FileDown, Search, Loader2 } from 'lucide-react'
+import { BarChart3, TrendingUp, TrendingDown, DollarSign, FileSpreadsheet, FileDown, FileText, Search, Loader2 } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -273,6 +273,18 @@ export function ReportsView() {
                     <Button
                       variant="outline"
                       onClick={() => {
+                        const params = new URLSearchParams({ format: 'pdf' })
+                        if (dateFrom) params.set('dateFrom', dateFrom)
+                        if (dateTo) params.set('dateTo', dateTo)
+                        window.open(`/api/reports/pnl/project/${selectedProjectId}/export?${params}`, '_blank')
+                      }}
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      Экспорт PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
                         const params = new URLSearchParams({ format: 'excel' })
                         if (dateFrom) params.set('dateFrom', dateFrom)
                         if (dateTo) params.set('dateTo', dateTo)
@@ -280,7 +292,7 @@ export function ReportsView() {
                       }}
                     >
                       <FileSpreadsheet className="mr-2 h-4 w-4" />
-                      Экспорт Excel
+                      Excel
                     </Button>
                     <Button
                       variant="outline"
@@ -425,18 +437,32 @@ export function ReportsView() {
                   Сформировать
                 </Button>
                 {businessPnl && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      const params = new URLSearchParams({ format: 'excel' })
-                      if (dateFrom) params.set('dateFrom', dateFrom)
-                      if (dateTo) params.set('dateTo', dateTo)
-                      window.open(`/api/reports/pnl/business/export?${params}`, '_blank')
-                    }}
-                  >
-                    <FileSpreadsheet className="mr-2 h-4 w-4" />
-                    Экспорт Excel
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const params = new URLSearchParams({ format: 'pdf' })
+                        if (dateFrom) params.set('dateFrom', dateFrom)
+                        if (dateTo) params.set('dateTo', dateTo)
+                        window.open(`/api/reports/pnl/business/export?${params}`, '_blank')
+                      }}
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const params = new URLSearchParams({ format: 'excel' })
+                        if (dateFrom) params.set('dateFrom', dateFrom)
+                        if (dateTo) params.set('dateTo', dateTo)
+                        window.open(`/api/reports/pnl/business/export?${params}`, '_blank')
+                      }}
+                    >
+                      <FileSpreadsheet className="mr-2 h-4 w-4" />
+                      Экспорт Excel
+                    </Button>
+                  </>
                 )}
               </div>
             </CardContent>

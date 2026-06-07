@@ -3,9 +3,16 @@ import { db } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
+import { logger } from '@/lib/logger';
 
 export async function GET() {
   try {
+    // Auth check
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
+    }
+
     // Get 1C import config specifically
     let config = await db.importConfig.findUnique({ where: { source: '1c_clientbank' } });
     if (!config) {
@@ -20,7 +27,7 @@ export async function GET() {
     }
     return NextResponse.json(config);
   } catch (error) {
-    console.error('GET /import-config error:', error);
+    logger.error('GET /import-config error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: 'Failed to fetch import config' }, { status: 500 });
   }
 }
@@ -69,7 +76,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json(config);
   } catch (error) {
-    console.error('PUT /import-config error:', error);
+    logger.error('PUT /import-config error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: 'Failed to update import config' }, { status: 500 });
   }
 }

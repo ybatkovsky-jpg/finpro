@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
+import { logger } from '@/lib/logger';
 
 export async function GET() {
   try {
@@ -21,7 +22,7 @@ export async function GET() {
 
     return NextResponse.json(rules);
   } catch (error) {
-    console.error('GET /api/classification-rules error:', error);
+    logger.error('GET /api/classification-rules error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Failed to fetch classification rules' },
       { status: 500 }
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(rule, { status: 201 });
   } catch (error) {
-    console.error('POST /api/classification-rules error:', error);
+    logger.error('POST /api/classification-rules error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Failed to create classification rule' },
       { status: 500 }

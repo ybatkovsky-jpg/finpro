@@ -2,7 +2,7 @@
 
 import { useAppStore } from '@/lib/store'
 import { Sidebar } from './sidebar'
-import { Menu } from 'lucide-react'
+import { Menu, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DashboardView } from '@/components/views/dashboard-view'
 import { TransactionsView } from '@/components/views/transactions-view'
@@ -20,6 +20,9 @@ import { UsersView } from '@/components/views/users-view'
 import { MarginView } from '@/components/views/margin-view'
 import { ClassificationRulesView } from '@/components/views/classification-rules-view'
 import { PeriodsView } from '@/components/views/periods-view'
+import { CommandPalette } from '@/components/search/command-palette'
+import { KeyboardShortcuts } from '@/components/keyboard-shortcuts'
+import { useState, useEffect } from 'react'
 
 const viewTitles: Record<string, string> = {
   dashboard: 'Дашборд',
@@ -83,6 +86,19 @@ function ViewRenderer() {
 
 export function AppLayout() {
   const { currentView, toggleSidebar } = useAppStore()
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Open command palette on Cmd+K from header button
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen((prev) => !prev)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -99,9 +115,29 @@ export function AppLayout() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <h2 className="text-lg font-semibold text-slate-900">
+          <h2 className="text-lg font-semibold text-slate-900 flex-1">
             {viewTitles[currentView] || 'Дашборд'}
           </h2>
+          <Button
+            variant="outline"
+            size="sm"
+            className="hidden sm:flex gap-2 text-muted-foreground"
+            onClick={() => setSearchOpen(true)}
+          >
+            <Search className="h-4 w-4" />
+            <span className="text-sm">Поиск</span>
+            <kbd className="pointer-events-none inline-flex h-5 items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+              ⌘K
+            </kbd>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="sm:hidden"
+            onClick={() => setSearchOpen(true)}
+          >
+            <Search className="h-5 w-5" />
+          </Button>
         </header>
 
         {/* Main content */}
@@ -109,6 +145,12 @@ export function AppLayout() {
           <ViewRenderer />
         </main>
       </div>
+
+      {/* Global search command palette */}
+      <CommandPalette />
+
+      {/* Global keyboard shortcuts */}
+      <KeyboardShortcuts />
     </div>
   )
 }

@@ -141,7 +141,7 @@ export function Sidebar() {
                           key={item.view}
                           onClick={() => setView(item.view)}
                           className={cn(
-                            'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                            'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors min-h-[44px]',
                             isActive
                               ? 'bg-emerald-600/20 text-emerald-400'
                               : 'text-slate-300 hover:bg-slate-800 hover:text-white'

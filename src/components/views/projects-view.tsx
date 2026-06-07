@@ -214,8 +214,8 @@ export function ProjectsView() {
             <CardTitle className="text-base">Транзакции проекта</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="max-h-96 overflow-y-auto">
-              <Table>
+            <div className="max-h-96 overflow-x-auto">
+              <Table className="min-w-[500px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Дата</TableHead>
@@ -280,7 +280,7 @@ export function ProjectsView() {
       </div>
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Card key={i} className="animate-pulse">
               <CardHeader>
@@ -297,7 +297,7 @@ export function ProjectsView() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map((p) => {
             const sc = statusConfig[p.status] || statusConfig.lead
             const md = marginData?.find((m) => m.id === p.id)

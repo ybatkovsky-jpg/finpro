@@ -1,11 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import * as XLSX from 'xlsx';
+import PDFDocument from 'pdfkit';
+import { logger } from '@/lib/logger';
 
 interface CogsLine {
   name: string;
   amount: number;
   children?: CogsLine[];
+}
+
+/**
+ * Format number with Russian thousands separator (space)
+ */
+function formatNumberRu(num: number): string {
+  return num.toLocaleString('ru-RU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/**
+ * Register Cyrillic-capable font for pdfkit
+ */
+function registerFonts(doc: PDFKit.PDFDocument) {
+  doc.registerFont('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf');
+  doc.registerFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf');
 }
 
 export async function GET(
@@ -101,10 +121,99 @@ export async function GET(
     const grossProfit = revenue - totalCogs;
     const grossMargin = revenue > 0 ? grossProfit / revenue : 0;
 
-    const periodLabel = `Период: ${dateFrom || '—'} — ${dateTo || '—'}`;
+    const periodLabel = `${dateFrom || '—'} — ${dateTo || '—'}`;
 
-    if (format === 'pdf' || format === 'csv') {
-      // Generate CSV as alternative to PDF
+    // ===== PDF FORMAT =====
+    if (format === 'pdf') {
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      registerFonts(doc);
+
+      const chunks: Buffer[] = [];
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+      const pageWidth = doc.page.width - 100; // margins
+
+      // Header
+      doc.font('DejaVuSans-Bold').fontSize(16).text('ООО ПРО Мебель', { align: 'center' });
+      doc.moveDown(0.5);
+      doc.font('DejaVuSans').fontSize(12).text('Отчёт P&L по проекту', { align: 'center' });
+      doc.moveDown(0.3);
+      doc.fontSize(10).text(`${project.name} (${project.externalId})`, { align: 'center' });
+      doc.moveDown(0.2);
+      doc.text(`Период: ${periodLabel}`, { align: 'center' });
+      doc.moveDown(1);
+
+      // Separator
+      doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).stroke();
+      doc.moveDown(0.5);
+
+      // Revenue
+      doc.font('DejaVuSans-Bold').fontSize(11).text('Выручка', 50, doc.y, { continued: true });
+      doc.text(formatNumberRu(revenue) + ' ₽', 50, doc.y, { align: 'right', width: pageWidth });
+      doc.moveDown(0.5);
+
+      // COGS header
+      doc.font('DejaVuSans-Bold').fontSize(11).text('Себестоимость (разбивка):');
+      doc.moveDown(0.3);
+
+      // COGS table
+      for (const line of cogsLines) {
+        doc.font('DejaVuSans-Bold').fontSize(10);
+        doc.text(`  ${line.name}`, 60, doc.y, { continued: true, width: pageWidth - 130 });
+        doc.text(formatNumberRu(line.amount) + ' ₽', 60, doc.y, { align: 'right', width: pageWidth - 20 });
+
+        if (line.children) {
+          for (const child of line.children) {
+            doc.font('DejaVuSans').fontSize(9);
+            doc.text(`    ${child.name}`, 80, doc.y, { continued: true, width: pageWidth - 150 });
+            doc.text(formatNumberRu(child.amount) + ' ₽', 80, doc.y, { align: 'right', width: pageWidth - 30 });
+          }
+        }
+        doc.moveDown(0.2);
+      }
+
+      doc.moveDown(0.3);
+
+      // Separator
+      doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).stroke();
+      doc.moveDown(0.5);
+
+      // Totals
+      doc.font('DejaVuSans-Bold').fontSize(11);
+      doc.text('Итого себестоимость', 50, doc.y, { continued: true });
+      doc.text(formatNumberRu(totalCogs) + ' ₽', 50, doc.y, { align: 'right', width: pageWidth });
+      doc.moveDown(0.3);
+
+      doc.text('Валовая прибыль', 50, doc.y, { continued: true });
+      doc.text(formatNumberRu(grossProfit) + ' ₽', 50, doc.y, { align: 'right', width: pageWidth });
+      doc.moveDown(0.3);
+
+      doc.text('Валовая маржа', 50, doc.y, { continued: true });
+      doc.text((grossMargin * 100).toFixed(1) + '%', 50, doc.y, { align: 'right', width: pageWidth });
+      doc.moveDown(1);
+
+      // Timestamp
+      doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).stroke();
+      doc.moveDown(0.5);
+      doc.font('DejaVuSans').fontSize(8).text(`Сформирован: ${new Date().toLocaleString('ru-RU')}`, { align: 'right' });
+
+      doc.end();
+
+      const pdfBuffer = await new Promise<Buffer>((resolve) => {
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+
+      const filename = `pnl_project_${project.externalId}.pdf`;
+      return new Response(pdfBuffer, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+        },
+      });
+    }
+
+    // ===== CSV FORMAT =====
+    if (format === 'csv') {
       const rows: string[][] = [
         ['Отчёт P&L по проекту'],
         [project.name, `(${project.externalId})`],
@@ -143,7 +252,7 @@ export async function GET(
       });
     }
 
-    // Default: Excel format
+    // ===== EXCEL FORMAT (default) =====
     const wb = XLSX.utils.book_new();
 
     // Sheet 1: P&L Summary
@@ -198,7 +307,9 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error('GET /reports/pnl/project/[projectId]/export error:', error);
+    logger.error('GET /reports/pnl/project/[projectId]/export error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json(
       { error: 'Failed to export P&L report' },
       { status: 500 }

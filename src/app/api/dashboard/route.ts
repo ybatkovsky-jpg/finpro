@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 export async function GET() {
   try {
@@ -131,7 +132,7 @@ export async function GET() {
       marginSummary,
     });
   } catch (error) {
-    console.error('GET /dashboard error:', error);
+    logger.error('GET /dashboard error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Failed to fetch dashboard data' },
       { status: 500 }

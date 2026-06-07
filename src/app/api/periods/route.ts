@@ -3,9 +3,16 @@ import { db } from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
+import { logger } from '@/lib/logger';
 
 export async function GET() {
   try {
+    // Auth check
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Необходима авторизация' }, { status: 401 });
+    }
+
     const periods = await db.periodClose.findMany({
       include: {
         user: { select: { id: true, name: true, email: true } },
@@ -15,7 +22,7 @@ export async function GET() {
 
     return NextResponse.json({ data: periods });
   } catch (error) {
-    console.error('GET /periods error:', error);
+    logger.error('GET /periods error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: 'Failed to fetch periods' }, { status: 500 });
   }
 }
@@ -62,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(closedPeriod, { status: 201 });
   } catch (error) {
-    console.error('POST /periods error:', error);
+    logger.error('POST /periods error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: 'Failed to close period' }, { status: 500 });
   }
 }

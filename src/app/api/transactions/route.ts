@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { getCurrentUser, requireRole } from '@/lib/auth-guard';
 import { checkPeriodClosed } from '@/lib/period-guard';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('GET /transactions error:', error);
+    logger.error('GET /transactions error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Failed to fetch transactions' },
       { status: 500 }
@@ -186,7 +187,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error('POST /transactions error:', error);
+    logger.error('POST /transactions error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: 'Failed to create transaction' },
       { status: 500 }

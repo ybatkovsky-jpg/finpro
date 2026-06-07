@@ -127,7 +127,7 @@ export function MarginView() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
             <Card key={i} className="animate-pulse">
               <CardHeader className="pb-2">
@@ -149,8 +149,7 @@ export function MarginView() {
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
         <Card className="border-l-4 border-l-slate-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -217,7 +216,7 @@ export function MarginView() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Проект</TableHead>
@@ -330,7 +329,7 @@ export function MarginView() {
               {alerts.map((alert) => (
                 <div
                   key={alert.projectId}
-                  className={`flex items-start gap-3 rounded-lg border p-4 ${
+                  className={`flex flex-col sm:flex-row items-start gap-3 rounded-lg border p-4 ${
                     alert.marginStatus === 'below_target'
                       ? 'border-red-200 bg-red-50'
                       : 'border-amber-200 bg-amber-50'

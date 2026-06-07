@@ -162,7 +162,7 @@ export function TransactionsView() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -182,7 +182,7 @@ export function TransactionsView() {
             </Button>
           )}
         </div>
-        <Button onClick={handleNewTransaction} size="sm">
+        <Button onClick={handleNewTransaction} size="sm" className="w-full sm:w-auto">
           <Plus className="mr-2 h-4 w-4" />
           Новая транзакция
         </Button>
@@ -192,7 +192,7 @@ export function TransactionsView() {
       {showFilters && (
         <Card>
           <CardContent className="pt-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
               <Select value={filterType} onValueChange={(v) => { setFilterType(v === 'all' ? '' : v); setPagination((p) => ({ ...p, page: 1 })) }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Тип операции" />
@@ -252,8 +252,8 @@ export function TransactionsView() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
-            <Table>
+          <div className="max-h-[calc(100vh-280px)] overflow-x-auto">
+            <Table className="min-w-[600px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-28">Дата</TableHead>
