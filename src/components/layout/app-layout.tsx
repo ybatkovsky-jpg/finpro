@@ -12,6 +12,11 @@ import { ImportView } from '@/components/views/import-view'
 import { CategoriesView } from '@/components/views/categories-view'
 import { CounterpartiesView } from '@/components/views/counterparties-view'
 import { SyncView } from '@/components/views/sync-view'
+import { BudgetsView } from '@/components/views/budgets-view'
+import { CashFlowView } from '@/components/views/cashflow-view'
+import { NotificationsView } from '@/components/views/notifications-view'
+import { AuditView } from '@/components/views/audit-view'
+import { UsersView } from '@/components/views/users-view'
 
 const viewTitles: Record<string, string> = {
   dashboard: 'Дашборд',
@@ -22,6 +27,11 @@ const viewTitles: Record<string, string> = {
   categories: 'Категории',
   counterparties: 'Контрагенты',
   sync: 'Синхронизация',
+  budgets: 'Бюджеты',
+  cashflow: 'Cash Flow',
+  notifications: 'Уведомления',
+  audit: 'Журнал аудита',
+  users: 'Пользователи',
 }
 
 function ViewRenderer() {
@@ -44,6 +54,16 @@ function ViewRenderer() {
       return <CounterpartiesView />
     case 'sync':
       return <SyncView />
+    case 'budgets':
+      return <BudgetsView />
+    case 'cashflow':
+      return <CashFlowView />
+    case 'notifications':
+      return <NotificationsView />
+    case 'audit':
+      return <AuditView />
+    case 'users':
+      return <UsersView />
     default:
       return <DashboardView />
   }

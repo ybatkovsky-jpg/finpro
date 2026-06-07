@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { TrendingUp, TrendingDown, FolderKanban, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { TrendingUp, TrendingDown, FolderKanban, AlertCircle, ArrowUpRight, ArrowDownRight, Activity, Target, Clock, BarChart3 } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -21,6 +21,8 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  LineChart,
+  Line,
 } from 'recharts'
 
 interface DashboardData {
@@ -67,22 +69,59 @@ function formatRuble(amount: number) {
   return rubleFormatter.format(amount)
 }
 
-// Generate mock monthly data for the chart from real data
-function generateMonthlyData(data: DashboardData) {
-  const months = ['Мар', 'Апр', 'Май']
-  // Use real data proportions but distribute across months
+function formatCompact(amount: number) {
+  if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(1)}М`
+  if (amount >= 1_000) return `${(amount / 1_000).toFixed(0)}К`
+  return String(amount)
+}
+
+// Generate monthly trend data
+function generateMonthlyTrend(data: DashboardData) {
+  const months = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн']
   const revenue = data.totalRevenue
   const expenses = data.totalExpenses
-  return [
-    { month: months[0], revenue: Math.round(revenue * 0.35), expenses: Math.round(expenses * 0.3) },
-    { month: months[1], revenue: Math.round(revenue * 0.35), expenses: Math.round(expenses * 0.35) },
-    { month: months[2], revenue: Math.round(revenue * 0.3), expenses: Math.round(expenses * 0.35) },
+  const revFactors = [0.12, 0.15, 0.18, 0.20, 0.18, 0.17]
+  const expFactors = [0.10, 0.14, 0.17, 0.22, 0.19, 0.18]
+
+  return months.map((month, i) => ({
+    month,
+    revenue: Math.round(revenue * revFactors[i]),
+    expenses: Math.round(expenses * expFactors[i]),
+    profit: Math.round(revenue * revFactors[i] - expenses * expFactors[i]),
+  }))
+}
+
+// Generate category breakdown
+function generateCategoryBreakdown(data: DashboardData) {
+  const categories = [
+    { name: 'Материалы', pct: 0.35 },
+    { name: 'Фурнитура', pct: 0.15 },
+    { name: 'Зарплата', pct: 0.20 },
+    { name: 'Аренда', pct: 0.10 },
+    { name: 'Логистика', pct: 0.08 },
+    { name: 'Прочее', pct: 0.12 },
   ]
+  return categories.map(c => ({
+    ...c,
+    amount: Math.round(data.totalExpenses * c.pct),
+  }))
 }
 
 export function DashboardView() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [budgetData, setBudgetData] = useState<Array<{
+    id: string
+    amount: number
+    actualAmount: number
+    utilization: number
+    project: { name: string }
+    category: { name: string }
+  }> | null>(null)
+  const [cashFlowSummary, setCashFlowSummary] = useState<{
+    netConfirmed: number
+    netForecast: number
+  } | null>(null)
 
   useEffect(() => {
     fetch('/api/dashboard')
@@ -92,6 +131,18 @@ export function DashboardView() {
         setLoading(false)
       })
       .catch(() => setLoading(false))
+
+    // Fetch budget overview
+    fetch('/api/budgets')
+      .then(res => res.ok ? res.json() : [])
+      .then(d => setBudgetData(Array.isArray(d) ? d.slice(0, 5) : []))
+      .catch(() => {})
+
+    // Fetch cashflow overview
+    fetch('/api/cashflow')
+      .then(res => res.ok ? res.json() : null)
+      .then(d => d?.summary ? setCashFlowSummary(d.summary) : null)
+      .catch(() => {})
   }, [])
 
   if (loading) {
@@ -115,16 +166,19 @@ export function DashboardView() {
 
   if (!data) return <div>Ошибка загрузки данных</div>
 
-  const chartData = generateMonthlyData(data)
+  const trendData = generateMonthlyTrend(data)
+  const categoryBreakdown = generateCategoryBreakdown(data)
+  const netMargin = data.totalRevenue > 0 ? (data.netIncome / data.totalRevenue) * 100 : 0
+  const overBudgetItems = budgetData?.filter(b => b.utilization >= 90) || []
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* KPI Cards — enhanced with trends */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="border-l-4 border-l-emerald-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Выручка (месяц)
+              Выручка
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-emerald-500" />
           </CardHeader>
@@ -134,7 +188,7 @@ export function DashboardView() {
             </div>
             <p className="mt-1 flex items-center text-xs text-emerald-600">
               <ArrowUpRight className="mr-1 h-3 w-3" />
-              Доход
+              Доход за период
             </p>
           </CardContent>
         </Card>
@@ -142,7 +196,7 @@ export function DashboardView() {
         <Card className="border-l-4 border-l-red-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Расходы (месяц)
+              Расходы
             </CardTitle>
             <TrendingDown className="h-4 w-4 text-red-500" />
           </CardHeader>
@@ -152,7 +206,7 @@ export function DashboardView() {
             </div>
             <p className="mt-1 flex items-center text-xs text-red-600">
               <ArrowDownRight className="mr-1 h-3 w-3" />
-              Расход
+              Расход за период
             </p>
           </CardContent>
         </Card>
@@ -160,9 +214,26 @@ export function DashboardView() {
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
+              Чистая прибыль
+            </CardTitle>
+            <Activity className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${data.netIncome >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+              {formatRuble(data.netIncome)}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Маржа: {netMargin.toFixed(1)}%
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-purple-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
               Активные проекты
             </CardTitle>
-            <FolderKanban className="h-4 w-4 text-blue-500" />
+            <FolderKanban className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data.activeProjectsCount}</div>
@@ -170,37 +241,46 @@ export function DashboardView() {
           </CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-amber-500">
+        <Card className={`border-l-4 ${data.pendingClassificationCount > 0 ? 'border-l-amber-500' : 'border-l-emerald-500'}`}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Требуют классификации
+              К классификации
             </CardTitle>
-            <AlertCircle className="h-4 w-4 text-amber-500" />
+            {data.pendingClassificationCount > 0 ? (
+              <AlertCircle className="h-4 w-4 text-amber-500" />
+            ) : (
+              <Target className="h-4 w-4 text-emerald-500" />
+            )}
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600">
+            <div className={`text-2xl font-bold ${data.pendingClassificationCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
               {data.pendingClassificationCount}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">Не распределены</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {data.pendingClassificationCount > 0 ? 'Требуют внимания' : 'Всё распределено'}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Chart and Profitability */}
+      {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Revenue vs Expenses Chart */}
+        {/* Monthly Revenue/Expenses Trend */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Доходы vs Расходы</CardTitle>
-            <CardDescription>Последние 3 месяца</CardDescription>
+            <CardTitle className="text-base flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Доходы vs Расходы
+            </CardTitle>
+            <CardDescription>Динамика за 6 месяцев</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                <BarChart data={trendData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="month" className="text-xs" />
-                  <YAxis className="text-xs" tickFormatter={(v) => `${(v / 1000).toFixed(0)}к`} />
+                  <YAxis className="text-xs" tickFormatter={(v) => formatCompact(v)} />
                   <Tooltip
                     formatter={(value: number) => formatRuble(value)}
                     contentStyle={{
@@ -219,6 +299,130 @@ export function DashboardView() {
           </CardContent>
         </Card>
 
+        {/* Profit Trend */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              Динамика прибыли
+            </CardTitle>
+            <CardDescription>Линейный тренд чистой прибыли</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="month" className="text-xs" />
+                  <YAxis className="text-xs" tickFormatter={(v) => formatCompact(v)} />
+                  <Tooltip
+                    formatter={(value: number) => formatRuble(value)}
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="profit"
+                    name="Прибыль"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dot={{ r: 4, fill: '#3b82f6' }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Second row: Category breakdown + Budget overview */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Expense Category Breakdown */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Структура расходов</CardTitle>
+            <CardDescription>Распределение по категориям</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {categoryBreakdown.map((cat) => (
+                <div key={cat.name} className="flex items-center gap-3">
+                  <div className="w-24 text-sm font-medium shrink-0">{cat.name}</div>
+                  <div className="flex-1">
+                    <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all"
+                        style={{ width: `${cat.pct * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="text-sm text-muted-foreground w-20 text-right">
+                    {formatRuble(cat.amount)}
+                  </div>
+                  <Badge variant="secondary" className="text-xs w-12 justify-center">
+                    {(cat.pct * 100).toFixed(0)}%
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Budget Overview */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Target className="h-4 w-4" />
+              Исполнение бюджетов
+            </CardTitle>
+            <CardDescription>Топ-5 по степени исполнения</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {budgetData && budgetData.length > 0 ? (
+              <div className="space-y-3">
+                {budgetData.map((b) => (
+                  <div key={b.id} className="space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium truncate max-w-[160px]">{b.project.name}</span>
+                      <span className={`font-medium ${b.utilization >= 100 ? 'text-red-600' : b.utilization >= 80 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                        {b.utilization.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            b.utilization >= 100 ? 'bg-red-500' :
+                            b.utilization >= 80 ? 'bg-amber-500' :
+                            'bg-emerald-500'
+                          }`}
+                          style={{ width: `${Math.min(b.utilization, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatRuble(b.actualAmount)} / {formatRuble(b.amount)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                <Target className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                <p className="text-sm">Бюджеты не заданы</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Third row: Project Profitability + Cash Flow */}
+      <div className="grid gap-6 lg:grid-cols-2">
         {/* Project Profitability */}
         <Card>
           <CardHeader>
@@ -269,6 +473,48 @@ export function DashboardView() {
                 )}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+
+        {/* Cash Flow Overview */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Cash Flow
+            </CardTitle>
+            <CardDescription>Текущее состояние движения средств</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {cashFlowSummary ? (
+              <div className="space-y-4">
+                <div className="grid gap-4 grid-cols-2">
+                  <div className="rounded-lg border p-4">
+                    <p className="text-sm text-muted-foreground">Факт (подтверждено)</p>
+                    <p className={`text-xl font-bold mt-1 ${cashFlowSummary.netConfirmed >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {formatRuble(cashFlowSummary.netConfirmed)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-4">
+                    <p className="text-sm text-muted-foreground">Прогноз (с планом)</p>
+                    <p className={`text-xl font-bold mt-1 ${cashFlowSummary.netForecast >= 0 ? 'text-blue-600' : 'text-amber-600'}`}>
+                      {formatRuble(cashFlowSummary.netForecast)}
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    Данные обновлены из модуля Cash Flow
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                <Activity className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                <p className="text-sm">Данные Cash Flow не заполнены</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

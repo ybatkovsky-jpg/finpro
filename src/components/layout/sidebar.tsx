@@ -15,6 +15,11 @@ import {
   RefreshCw,
   X,
   LogOut,
+  PiggyBank,
+  Wallet,
+  Bell,
+  ShieldCheck,
+  UserCog,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -27,15 +32,20 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-const navItems: { view: View; label: string; icon: React.ElementType; group: string }[] = [
+const navItems: { view: View; label: string; icon: React.ElementType; group: string; roles?: string[] }[] = [
   { view: 'dashboard', label: 'Дашборд', icon: LayoutDashboard, group: 'Основное' },
   { view: 'transactions', label: 'Транзакции', icon: ArrowLeftRight, group: 'Основное' },
   { view: 'projects', label: 'Проекты', icon: FolderKanban, group: 'Основное' },
+  { view: 'budgets', label: 'Бюджеты', icon: PiggyBank, group: 'Планирование' },
+  { view: 'cashflow', label: 'Cash Flow', icon: Wallet, group: 'Планирование' },
   { view: 'reports', label: 'Отчёты P&L', icon: BarChart3, group: 'Аналитика' },
   { view: 'sync', label: 'Синхронизация', icon: RefreshCw, group: 'Аналитика' },
   { view: 'import', label: 'Импорт', icon: Upload, group: 'Аналитика' },
   { view: 'categories', label: 'Категории', icon: Tags, group: 'Справочники' },
   { view: 'counterparties', label: 'Контрагенты', icon: Users, group: 'Справочники' },
+  { view: 'users', label: 'Пользователи', icon: UserCog, group: 'Администрирование', roles: ['owner'] },
+  { view: 'audit', label: 'Журнал аудита', icon: ShieldCheck, group: 'Администрирование', roles: ['owner', 'accountant'] },
+  { view: 'notifications', label: 'Уведомления', icon: Bell, group: 'Администрирование' },
 ]
 
 function getInitials(name: string): string {
@@ -50,7 +60,7 @@ export function Sidebar() {
   const { data: session } = useSession()
   const { currentView, setView, sidebarOpen, setSidebarOpen } = useAppStore()
 
-  const groups = ['Основное', 'Аналитика', 'Справочники']
+  const groups = ['Основное', 'Планирование', 'Аналитика', 'Справочники', 'Администрирование']
   const userName = session?.user?.name ?? 'Пользователь'
   const userRole = session?.user?.role ?? 'manager'
   const initials = getInitials(userName)
@@ -58,6 +68,12 @@ export function Sidebar() {
   const handleSignOut = async () => {
     await signOut({ callbackUrl: '/' })
   }
+
+  // Filter nav items by user role
+  const visibleNavItems = navItems.filter(item => {
+    if (!item.roles) return true
+    return item.roles.includes(userRole)
+  })
 
   return (
     <>
@@ -102,15 +118,16 @@ export function Sidebar() {
         {/* Navigation */}
         <ScrollArea className="flex-1 px-3 py-4">
           <nav className="space-y-6">
-            {groups.map((group) => (
-              <div key={group}>
-                <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                  {group}
-                </p>
-                <div className="space-y-1">
-                  {navItems
-                    .filter((item) => item.group === group)
-                    .map((item) => {
+            {groups.map((group) => {
+              const groupItems = visibleNavItems.filter((item) => item.group === group)
+              if (groupItems.length === 0) return null
+              return (
+                <div key={group}>
+                  <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                    {group}
+                  </p>
+                  <div className="space-y-1">
+                    {groupItems.map((item) => {
                       const Icon = item.icon
                       const isActive = currentView === item.view
                       return (
@@ -129,9 +146,10 @@ export function Sidebar() {
                         </button>
                       )
                     })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </nav>
         </ScrollArea>
 

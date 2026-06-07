@@ -21,6 +21,7 @@ model User {
   transactions   Transaction[]   @relation("TransactionCreator")
   auditLogs      AuditLog[]
   refreshTokens  RefreshToken[]
+  notifications  Notification[]
 }
 
 model Client {
@@ -43,7 +44,8 @@ model Counterparty {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions Transaction[]
+  transactions     Transaction[]
+  cashFlowPayments CashFlowPayment[]
 }
 
 model Category {
@@ -57,6 +59,7 @@ model Category {
   parent       Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
   children     Category[]  @relation("CategoryHierarchy")
   transactions Transaction[]
+  budgets      Budget[]
 }
 
 model Project {
@@ -75,6 +78,7 @@ model Project {
   client       Client?       @relation(fields: [clientId], references: [id])
   manager      User?         @relation("ProjectManager", fields: [managerId], references: [id])
   transactions Transaction[]
+  budgets      Budget[]
 }
 
 model Transaction {
@@ -105,9 +109,9 @@ model Transaction {
 
 model AuditLog {
   id            String   @id @default(uuid())
-  entityType    String   // transaction | project | category
+  entityType    String   // transaction | project | category | budget | user
   entityId      String
-  action        String   // create | update | delete | import
+  action        String   // create | update | delete | import | sync
   changes       String?  // JSON string
   transactionId String?
   userId        String
@@ -125,4 +129,62 @@ model RefreshToken {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==================== Stage 2 Models ====================
+
+model Budget {
+  id          String   @id @default(uuid())
+  projectId   String
+  categoryId  String
+  amount      Float    // Плановая сумма
+  period      String   // 2026-01, 2026-Q1, 2026 и т.д.
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([projectId, categoryId, period])
+}
+
+model CashFlowPayment {
+  id             String   @id @default(uuid())
+  date           DateTime
+  amount         Float
+  type           String   // inflow | outflow | planned_inflow | planned_outflow
+  counterpartyId String?
+  projectId      String?
+  description    String?
+  status         String   @default("planned") // planned | confirmed | cancelled
+  dueDate        DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  counterparty Counterparty? @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // budget_overrun | project_deadline | sync_error | cash_gap | system
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?  // URL для перехода
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SyncLog {
+  id           String   @id @default(uuid())
+  source       String   // zakuppro | 1c_clientbank | csv
+  status       String   // success | partial | failed
+  recordsTotal Int      @default(0)
+  recordsSynced Int     @default(0)
+  errors       String?  // JSON array of errors
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
 }
